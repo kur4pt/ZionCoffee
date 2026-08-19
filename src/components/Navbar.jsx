@@ -1,4 +1,4 @@
-import { Menu } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useState } from "react";
 
 export default function Navbar() {
@@ -31,8 +31,7 @@ export default function Navbar() {
                         </a>
                     </div>
 
-                    <buton 
-                        className= "md:hidden p-2 text-white-300 hover:text-black" 
+                    <buton className= "md:hidden p-2 text-grey-300 hover:text-white" 
                         onClick={() => setMobileMenuIsOpen((prev)=> !prev)}>
                             { mobileMenuIsOpen ? (
                                 <X className="w-5 h-5 sm:w-6 smh-6"/>
@@ -45,7 +44,7 @@ export default function Navbar() {
 
             {/* Mobile Menu */}
             {mobileMenuIsOpen && (
-            <div className="md:hidden bg-slate900/295 backgdrop-blur-lg border-t border-slate-800">
+            <div className="md:hidden bg-slate-900/95 backdrop-blur-lg border-t border-slate-800">
                 <div>
                     <a href="#Features" className="text-black-300 hover:text-white text-sm lg:text-base">
                         Features
