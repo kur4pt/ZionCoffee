@@ -1,6 +1,7 @@
-export default function Navbar() {
-    return 
-    <div>
+export default function Footer() {
+    return (
+        <div>
 
-    </div>
+        </div>
+    );
 }

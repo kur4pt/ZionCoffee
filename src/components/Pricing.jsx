@@ -1,6 +1,7 @@
 export default function Pricing() {
-    return 
-    <div>
+    return (
+        <div>
 
-    </div>
+        </div>
+    );
 }
