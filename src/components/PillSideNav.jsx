@@ -3,7 +3,6 @@ import { useState } from "react";
 import { Home, ShoppingCart, ReceiptText, Blender, ChartPie, UserStar } from "lucide-react";
 
 const navItems = [
-    {id: 'home',            label: 'Home',              icon: Home,         path: '/Home'},
     {id: 'createOrder',     label: 'Create Order',      icon: ShoppingCart, path: '/CreateOrder'},
     {id: 'orderQueue',      label: 'Order Queue',       icon: Blender,      path: '/OrderQueue'},
     {id: 'previousOrders',  label: 'Previous Orders',   icon: ReceiptText,  path: '/PreviousOrder'},
