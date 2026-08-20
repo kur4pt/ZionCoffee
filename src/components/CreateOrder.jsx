@@ -16,59 +16,98 @@ export default function CreateOrder() {
 
   // Dynamic Cart State
   const [cart, setCart] = useState([]);
+  const [customerName, setCustomerName] = useState("");
 
   // Modal State
   const [selectedItem, setSelectedItem] = useState(null);
+  const [editingItemId, setEditingItemId] = useState(null);
   const [temp, setTemp] = useState("Iced");
   const [milk, setMilk] = useState("Whole Milk");
   const [foam, setFoam] = useState("None");
 
   const categories = Array.from(new Set(menuItems.map((item) => item.category)));
 
-  // Open Modal for selected drink
-  const handleOpenModal = (item) => {
+  // Open Modal to add New items
+  const handleOpenAddModal = (item) => {
     setSelectedItem(item);
+    setEditingItemId(null);
     setTemp(item.category === "Coffee" ? "Iced" : "Cold");
-    setMilk(item.category === "Coffee" ? "Whole Milk" : "Oat Milk");
+    setMilk(item.category === "Coffee" ? "Whole Milk" : "None");
     setFoam("None");
+  };
+
+  // Open Modal to Edit Existing Item in cart
+  const handleOpenEditModal = (cartItem) => {
+    const baseItem = menuItems.find((m) => m.name === cartItem.name);
+
+    setSelectedItem(baseItem || { name: cartItem.name, price: cartItem.basePrice || cartItem.price, category: cartItem.milk ? "Coffee" : "Other" });
+    setEditingItemId(cartItem.id);
+    setTemp(cartItem.temp);
+    setMilk(cartItem.milk || "Whole Milk");
+    setFoam(cartItem.foam);
   };
 
   // Close modal reset
   const handleCloseModal = () => {
     setSelectedItem(null);
+    setEditingItemId(null);
   };
 
-  // Add to cart function
-  const handleAddToCart = () => {
-    // Fixed foam price logic
+  // Handle Add or Update Cart Item
+  const handleSaveCartItem = () => {
     const foamPrice = foam === "Sea Salt Cold Foam" ? 1.50 : foam === "Regular Cold Foam" ? 1.00 : 0;
-    const finalPrice = selectedItem.price + foamPrice;
+    const basePrice = selectedItem.price;
+    const finalPrice = basePrice + foamPrice;
 
-    const cartItem = {
-      id: Date.now(),
-      name: selectedItem.name,
-      temp,
-      milk: selectedItem.category === "Coffee" ? milk : null,
-      foam,
-      price: finalPrice,
-    };
+    if (editingItemId) {
+      // Update existing item in cart
+      setCart(
+        cart.map((item) =>
+          item.id === editingItemId
+            ? {
+                ...item,
+                temp,
+                milk: selectedItem.category === "Coffee" ? milk : null,
+                foam,
+                basePrice,
+                price: finalPrice,
+              }
+            : item
+        )
+      );
+    } else {
+      // Create new cart item
+      const newCartItem = {
+        id: Date.now(),
+        name: selectedItem.name,
+        temp,
+        milk: selectedItem.category === "Coffee" ? milk : null,
+        foam,
+        basePrice,
+        price: finalPrice,
+      };
+      setCart([...cart, newCartItem]);
+    }
 
-    setCart([...cart, cartItem]);
     handleCloseModal();
+  };
+
+  const handleRemoveFromCart = (itemId) => {
+    setCart(cart.filter((item) => item.id !== itemId));
   };
 
   const subTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
   return (
     <div className="min-h-screen p-6 flex flex-col bg-gray-50">
+
       {/* HEADER SECTION */}
       <header className="relative flex items-center justify-between pb-6 mb-6">
-        <NavLink
-          to="/"
+        <div
           className="text-sm font-semibold tracking-wider text-gray-500 uppercase hover:text-black transition-colors"
         >
-          ← Home
-        </NavLink>
+          Home
+        </div>
         <h1 className="absolute left-1/2 -translate-x-1/2 font-meddon text-4xl font-bold text-stone-800">
           Zion Coffee
         </h1>
@@ -77,6 +116,7 @@ export default function CreateOrder() {
 
       {/* MAIN TWO-COLUMN BODY */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8">
+
         {/* LEFT COLUMN: Menu Categories & Items */}
         <div className="lg:col-span-2 space-y-8">
           {categories.map((category) => (
@@ -90,10 +130,10 @@ export default function CreateOrder() {
                   .map((item) => (
                     <button
                       key={item.id}
-                      onClick={() => handleOpenModal(item)}
+                      onClick={() => handleOpenAddModal(item)}
                       className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-amber-600 transition-all text-left flex flex-col justify-between overflow-hidden min-h-[140px]"
                     >
-                      {/* Optional Image check */}
+                      {/* Image check */}
                       {item.image && (
                         <div className="w-full h-24 bg-gray-100 overflow-hidden">
                           <img
@@ -121,25 +161,65 @@ export default function CreateOrder() {
               Current Order
             </h2>
 
+            <div className="mb-5">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-2">
+                Customer Name
+              </label>
+              <input 
+                type="text"
+                placeholder="Enter customer name..."
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black transition-all" 
+              />
+            </div>
+
             {/* Cart Items List */}
             <div className="space-y-4 mb-6 max-h-[50vh] overflow-y-auto">
               {cart.length === 0 ? (
                 <p className="text-gray-400 text-sm italic">No items added yet.</p>
               ) : (
                 cart.map((item) => (
-                  <div key={item.id} className="flex justify-between items-start border-b pb-2">
-                    <div>
+                  <div 
+                    key={item.id} 
+                    className="flex justify-between items-start border-b border-gray-100 pb-3"
+                  >
+                    <div className="pr-2">
                       <p className="font-semibold text-sm text-gray-700">{item.name}</p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-xs text-gray-500">
                         {item.temp} {item.milk ? `• ${item.milk}` : ""}
                       </p>
                       {item.foam !== "None" && (
                         <p className="text-xs text-amber-700 font-medium"> + {item.foam}</p>
                       )}
                     </div>
-                    <span className="font-bold text-sm text-stone-800">
-                      ${item.price.toFixed(2)}
-                    </span>
+
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-stone-800 mr-1">
+                        ${item.price.toFixed(2)}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                        {/* Edit item button */}
+                        <button 
+                            onClick={() => handleOpenEditModal(item)}
+                            className="w-14 bg-gray-300 hover:bg-amber-800 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-2 rounded-xl transition-colors shadow-md"
+                            title="Edit Item"
+                        >
+                            Edit
+                        </button>
+
+                        {/* Remove Item button */}
+                        <button 
+                            onClick={() => handleRemoveFromCart(item.id)}
+                            className="w-14 bg-red-900/75 hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-2 rounded-xl transition-colors shadow-md"
+                            title="Remove Item"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                  
                   </div>
                 ))
               )}
@@ -153,8 +233,8 @@ export default function CreateOrder() {
               <span>${subTotal.toFixed(2)}</span>
             </div>
             <button
-              disabled={cart.length === 0}
-              className="w-full bg-black hover:bg-stone-800 disabled:bg-gray-300 text-white font-bold py-3.5 rounded-xl transition-colors shadow-md"
+              disabled={cart.length === 0 || !customerName.trim()}
+              className="w-full bg-black hover:bg-amber-900 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-3.5 rounded-xl transition-colors shadow-md"
             >
               Place Order
             </button>
@@ -169,8 +249,12 @@ export default function CreateOrder() {
             {/* Header */}
             <div className="flex justify-between items-start border-b pb-3">
               <div>
-                <h3 className="text-2xl font-bold text-gray-800">{selectedItem.name}</h3>
-                <p className="text-sm text-amber-800 font-semibold">${selectedItem.price.toFixed(2)}</p>
+                <h3 className="text-2xl font-bold text-gray-800">
+                  {selectedItem.name}
+                </h3>
+                <p className="text-sm text-amber-800 font-semibold">
+                  ${selectedItem.price.toFixed(2)}
+                </p>
               </div>
               <button
                 onClick={handleCloseModal}
@@ -238,7 +322,7 @@ export default function CreateOrder() {
                 {[
                   { label: "None", add: 0 },
                   { label: "Regular Cold Foam", add: 1.00 },
-                  { label: "Sea Salt Cold Foam", add: 1.00 },
+                  { label: "Sea Salt Cold Foam", add: 1.50 },
                 ].map((option) => (
                   <button
                     key={option.label}
@@ -261,10 +345,10 @@ export default function CreateOrder() {
             {/* Modal Action */}
             <div className="pt-2">
               <button
-                onClick={handleAddToCart}
+                onClick={handleSaveCartItem}
                 className="w-full bg-amber-800 hover:bg-amber-950 text-white font-bold py-3 rounded-xl transition-colors shadow-md"
               >
-                Add to Cart
+                {editingItemId ? "Update Item" : "Add to Order"}
               </button>
             </div>
           </div>
