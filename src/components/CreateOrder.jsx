@@ -61,6 +61,7 @@ export default function CreateOrder() {
         name: cartItem.name, 
         price: cartItem.basePrice || cartItem.price, 
         category: cartItem.category || "Coffee",
+        allowed_customizations: cartItem.allowed_customizations || [],
       }
     );
 
@@ -77,10 +78,14 @@ export default function CreateOrder() {
   };
 
   const handleSaveCartItem = () => {
-    const isCoffee = selectedItem.category === "Coffee";
-    const isLemonade = selectedItem.category === "Lemonade & Sparkling";
+    // Check dynamic customization options from Supabase array
+    const allowed = selectedItem.allowed_customizations || [];
+    const hasTemp = allowed.includes("temp");
+    const hasMilk = allowed.includes("milk");
+    const hasFoam = allowed.includes("foam");
+    const hasSparkling = allowed.includes("sparklingType");
 
-    const activeFoam = isCoffee && temp === "Iced" ? foam : "None";
+    const activeFoam = hasFoam && temp === "Iced" ? foam : "None";
 
     const basePrice = Number(selectedItem.price); 
     const foamPrice = activeFoam !== "None" ? 1.00 : 0;
@@ -89,10 +94,11 @@ export default function CreateOrder() {
     const payload = {
       name: selectedItem.name,
       category: selectedItem.category,
-      temp: isCoffee ? temp : null,
-      milk: isCoffee ? milk : null,
-      foam: isCoffee && temp === "Iced" ? activeFoam : null,
-      sparklingType: isLemonade ? sparklingType : null,
+      allowed_customizations: allowed,
+      temp: hasTemp ? temp : null,
+      milk: hasMilk ? milk : null,
+      foam: hasFoam && temp === "Iced" ? activeFoam : null,
+      sparklingType: hasSparkling ? sparklingType : null,
       basePrice,
       price: parseFloat(finalPrice.toFixed(2)),
     };
@@ -165,6 +171,9 @@ export default function CreateOrder() {
       setIsSubmitting(false);
     }
   };
+
+  // Helper check for modal customization array
+  const allowedOpts = selectedItem?.allowed_customizations || [];
 
   return (
     <div className="min-h-screen pb-24 lg:pb-6 p-4 lg:p-6 flex flex-col bg-stone-100">
@@ -267,9 +276,7 @@ export default function CreateOrder() {
                     <div className="pr-2 flex-1">
                       <p className="font-semibold text-sm text-stone-800">{item.name}</p>
                       <p className="text-xs text-stone-500">
-                        {item.temp ? `${item.temp} ` : ""}
-                        {item.milk ? `• ${item.milk} ` : ""}
-                        {item.sparklingType ? `• ${item.sparklingType}` : ""}
+                        {[item.temp, item.milk, item.sparklingType].filter(Boolean).join(" • ")}
                       </p>
                       {item.foam && item.foam !== "None" && (
                         <p className="text-xs text-amber-800 font-medium">+ {item.foam}</p>
@@ -424,7 +431,7 @@ export default function CreateOrder() {
         )}
       </div>
 
-      {/* ITEM CUSTOMIZATION MODAL */}
+      {/* DYNAMIC ITEM CUSTOMIZATION MODAL */}
       {selectedItem && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl flex flex-col gap-5 animate-in fade-in zoom-in-95">
@@ -445,37 +452,17 @@ export default function CreateOrder() {
               </button>
             </div>
 
-            {selectedItem.category === "Frappuccino" && (
+            {/* Default text if item requires no customizations */}
+            {allowedOpts.length === 0 && (
               <p className="text-sm text-stone-500 italic py-2">
-                This item is served blended with its signature standard recipe and does not require customization options.
+                This item is served with its signature standard recipe and does not require customization options.
               </p>
             )}
 
-            {selectedItem.category === "Lemonade & Sparkling" && (
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-2">
-                  Style
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {["Regular", "Sparkling"].map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => setSparklingType(option)}
-                      className={`py-2 rounded-xl font-medium border text-sm transition-all ${
-                        sparklingType === option
-                          ? "bg-stone-900 text-white border-stone-900"
-                          : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
-                      }`}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {selectedItem.category === "Coffee" && (
-              <>
+            {/* Dynamic Customization Options */}
+            <div className="space-y-4">
+              {/* Temperature */}
+              {allowedOpts.includes("temp") && (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-stone-600 block mb-2">
                     Temperature
@@ -486,9 +473,7 @@ export default function CreateOrder() {
                         key={option}
                         onClick={() => {
                           setTemp(option);
-                          if (option === "Hot") {
-                            setFoam("None");
-                          }
+                          if (option === "Hot") setFoam("None");
                         }}
                         className={`py-2 rounded-xl font-medium border text-sm transition-all ${
                           temp === option
@@ -501,7 +486,10 @@ export default function CreateOrder() {
                     ))}
                   </div>
                 </div>
+              )}
 
+              {/* Milk */}
+              {allowedOpts.includes("milk") && (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-2">
                     Milk
@@ -522,38 +510,63 @@ export default function CreateOrder() {
                     ))}
                   </div>
                 </div>
+              )}
 
-                {temp === "Iced" && (
-                  <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-2">
-                      Cold Foam
-                    </label>
-                    <div className="flex flex-col gap-2">
-                      {[
-                        { label: "None", add: 0.00 },
-                        { label: "Vanilla Cold Foam", add: 1.00 },
-                        { label: "Sea Salt Cold Foam", add: 1.00 },
-                      ].map((option) => (
-                        <button 
-                          key={option.label}
-                          onClick={() => setFoam(option.label)}
-                          className={`py-2 px-4 rounded-xl font-medium border text-sm flex justify-between transition-all ${
-                            foam === option.label
-                              ? "bg-stone-900 text-white border-stone-900"
-                              : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
-                          }`}
-                        >
-                          <span>{option.label}</span>
-                          <span className="text-xs opacity-80">
-                            {option.add > 0 ? `+$${option.add.toFixed(2)}` : "Free"}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+              {/* Cold Foam (Only visible when Temp is Iced) */}
+              {allowedOpts.includes("foam") && temp === "Iced" && (
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-2">
+                    Cold Foam
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { label: "None", add: 0.00 },
+                      { label: "Vanilla Cold Foam", add: 1.00 },
+                      { label: "Sea Salt Cold Foam", add: 1.00 },
+                    ].map((option) => (
+                      <button 
+                        key={option.label}
+                        onClick={() => setFoam(option.label)}
+                        className={`py-2 px-4 rounded-xl font-medium border text-sm flex justify-between transition-all ${
+                          foam === option.label
+                            ? "bg-stone-900 text-white border-stone-900"
+                            : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className="text-xs opacity-80">
+                          {option.add > 0 ? `+$${option.add.toFixed(2)}` : "Free"}
+                        </span>
+                      </button>
+                    ))}
                   </div>
-                )}
-              </>
-            )}
+                </div>
+              )}
+
+              {/* Sparkling Style */}
+              {allowedOpts.includes("sparklingType") && (
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-2">
+                    Style
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["Regular", "Sparkling"].map((option) => (
+                      <button
+                        key={option}
+                        onClick={() => setSparklingType(option)}
+                        className={`py-2 rounded-xl font-medium border text-sm transition-all ${
+                          sparklingType === option
+                            ? "bg-stone-900 text-white border-stone-900"
+                            : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="pt-2">
               <button

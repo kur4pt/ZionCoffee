@@ -17,6 +17,14 @@ export default function AdminMenu() {
   const [newItemImage, setNewItemImage] = useState(null);
   const [newItemImagePreview, setNewItemImagePreview] = useState("");
 
+  // Customizations Form State
+  const [customizations, setCustomizations] = useState({
+    temp: false,
+    milk: false,
+    foam: false,
+    sparklingType: false,
+  });
+
   // New Category State
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [customCategory, setCustomCategory] = useState("");
@@ -35,7 +43,6 @@ export default function AdminMenu() {
     if (!error && data) {
       setMenuItems(data);
 
-      // Dynamically extract any existing categories from saved items
       const existingCats = Array.from(
         new Set(data.map((item) => item.category).filter(Boolean))
       );
@@ -134,7 +141,6 @@ export default function AdminMenu() {
     }
   };
 
-  // Delete Menu Item Handler
   const handleRemoveMenuItem = async (itemId, itemName) => {
     const confirmDelete = window.confirm(
       `Are you sure you want to delete "${itemName}" from the menu?`
@@ -149,7 +155,6 @@ export default function AdminMenu() {
 
       if (error) throw error;
 
-      // Remove item from state
       setMenuItems((prev) => prev.filter((item) => item.id !== itemId));
     } catch (err) {
       console.error("Failed to delete item:", err.message);
@@ -157,7 +162,6 @@ export default function AdminMenu() {
     }
   };
 
-  // Save Custom Category Handler
   const handleSaveNewCategory = (e) => {
     e.preventDefault();
     const trimmed = customCategory.trim();
@@ -171,6 +175,10 @@ export default function AdminMenu() {
     setIsAddingCategory(false);
   };
 
+  const handleCustomizationToggle = (key) => {
+    setCustomizations((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const handleAddMenuItem = async (e) => {
     e.preventDefault();
     if (!newItemName.trim() || !newItemPrice) return;
@@ -182,6 +190,11 @@ export default function AdminMenu() {
       imageUrl = await convertFileToBase64(newItemImage);
     }
 
+    // Extract active customization keys into an array, e.g., ["temp", "milk"]
+    const allowedCustomizations = Object.keys(customizations).filter(
+      (key) => customizations[key]
+    );
+
     const { data, error } = await supabase
       .from("menu_items")
       .insert([
@@ -191,6 +204,7 @@ export default function AdminMenu() {
           category: newItemCategory,
           image_url: imageUrl,
           is_available: true,
+          allowed_customizations: allowedCustomizations,
         },
       ])
       .select();
@@ -207,6 +221,12 @@ export default function AdminMenu() {
       setNewItemPrice("");
       setNewItemImage(null);
       setNewItemImagePreview("");
+      setCustomizations({
+        temp: false,
+        milk: false,
+        foam: false,
+        sparklingType: false,
+      });
     }
   };
 
@@ -222,7 +242,7 @@ export default function AdminMenu() {
       {/* Add New Item Form Card */}
       <form
         onSubmit={handleAddMenuItem}
-        className="bg-white p-6 rounded-2xl border shadow-sm space-y-4"
+        className="bg-white p-6 rounded-2xl border shadow-sm space-y-6"
       >
         <h2 className="text-lg font-bold text-stone-800">Add New Drink</h2>
 
@@ -315,6 +335,34 @@ export default function AdminMenu() {
                 className="hidden"
               />
             </label>
+          </div>
+        </div>
+
+        {/* Customization Options Selection */}
+        <div className="pt-2 border-t">
+          <label className="block text-xs font-bold text-stone-600 uppercase mb-2">
+            Allowed Customizations
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { id: "temp", label: "Temperature (Iced/Hot)" },
+              { id: "milk", label: "Milk Options" },
+              { id: "foam", label: "Cold Foam Options" },
+              { id: "sparklingType", label: "Sparkling Style" },
+            ].map((opt) => (
+              <label
+                key={opt.id}
+                className="flex items-center gap-2 p-2.5 border rounded-xl text-xs font-medium text-stone-700 bg-stone-50 cursor-pointer hover:bg-stone-100 transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={customizations[opt.id]}
+                  onChange={() => handleCustomizationToggle(opt.id)}
+                  className="rounded border-stone-300 text-amber-900 focus:ring-amber-900"
+                />
+                <span>{opt.label}</span>
+              </label>
+            ))}
           </div>
         </div>
 
@@ -413,9 +461,19 @@ export default function AdminMenu() {
                   <h3 className="font-bold text-stone-800 text-lg leading-snug">
                     {item.name}
                   </h3>
-                  <span className="inline-block bg-stone-100 text-stone-600 text-xs px-2.5 py-0.5 rounded-full font-medium mt-1">
-                    {item.category}
-                  </span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    <span className="inline-block bg-stone-100 text-stone-600 text-xs px-2.5 py-0.5 rounded-full font-medium">
+                      {item.category}
+                    </span>
+                    {item.allowed_customizations?.map((cust) => (
+                      <span
+                        key={cust}
+                        className="inline-block bg-amber-50 text-amber-900 border border-amber-200 text-[10px] px-2 py-0.5 rounded-full font-medium"
+                      >
+                        {cust}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="pt-3 border-t flex items-center justify-between">
