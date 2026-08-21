@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { supabase } from "../supabaseClient";
 
 export default function CreateOrder() {
   const menuItems = [
@@ -17,6 +17,7 @@ export default function CreateOrder() {
   // Dynamic Cart State
   const [cart, setCart] = useState([]);
   const [customerName, setCustomerName] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Modal State
   const [selectedItem, setSelectedItem] = useState(null);
@@ -35,7 +36,7 @@ export default function CreateOrder() {
     setTemp("Iced");
     setMilk("Whole Milk");
     setFoam("None");
-    setSparklingType("Regular")
+    setSparklingType("Regular");
   };
 
   // Open Modal to Edit Existing Item in cart
@@ -43,18 +44,18 @@ export default function CreateOrder() {
     const baseItem = menuItems.find((m) => m.name === cartItem.name);
 
     setSelectedItem(
-        baseItem || { 
-            name: cartItem.name, 
-            price: cartItem.basePrice || cartItem.price, 
-            category: cartItem.milk || "Coffee",
-        }
+      baseItem || { 
+        name: cartItem.name, 
+        price: cartItem.basePrice || cartItem.price, 
+        category: cartItem.category || "Coffee",
+      }
     );
 
     setEditingItemId(cartItem.id);
     setTemp(cartItem.temp || "Iced");
     setMilk(cartItem.milk || "Whole Milk");
     setFoam(cartItem.foam || "None");
-    setSparklingType(cartItem.sparklingType || "Regular")
+    setSparklingType(cartItem.sparklingType || "Regular");
   };
 
   // Close modal reset
@@ -65,34 +66,33 @@ export default function CreateOrder() {
 
   // Handle Add or Update Cart Item
   const handleSaveCartItem = () => {
-
     const isCoffee = selectedItem.category === "Coffee";
     const isLemonade = selectedItem.category === "Lemonade & Sparkling";
 
-    const foamPrice = foam === "Sea Salt Cold Foam" ? 1.00 : foam === "Regular Cold Foam" ? 1.00 : 0;
+    const foamPrice = foam === "Sea Salt Cold Foam" || foam === "Vanilla Cold Foam" ? 1.00 : 0;
     const basePrice = selectedItem.price;
     const finalPrice = basePrice + foamPrice;
 
     const payload = {
-        name: selectedItem.name,
-        category: selectedItem.category,
-        temp: isCoffee ? temp : null,
-        milk: isCoffee ? milk : null,
-        foam: isCoffee ? foam : null,
-        sparklingType: isLemonade ? sparklingType : null,
-        basePrice,
-        price: finalPrice,
+      name: selectedItem.name,
+      category: selectedItem.category,
+      temp: isCoffee ? temp : null,
+      milk: isCoffee ? milk : null,
+      foam: isCoffee ? foam : null,
+      sparklingType: isLemonade ? sparklingType : null,
+      basePrice,
+      price: finalPrice,
     };
 
     if (editingItemId) {
       setCart(
         cart.map((item) =>
-            item.id === editingItemId ? { ...item, ...payload } : item
+          item.id === editingItemId ? { ...item, ...payload } : item
         )
       );
     } else {
-        setCart([...cart, { id: Date.now(), ...payload }])
-    };
+      setCart([...cart, { id: Date.now(), ...payload }]);
+    }
     handleCloseModal();
   };
 
@@ -102,14 +102,67 @@ export default function CreateOrder() {
 
   const subTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
+  // SUPABASE ORDER SUBMISSION HANDLER
+  const handlePlaceOrder = async () => {
+    if (!customerName.trim() || cart.length === 0) return;
+
+    setIsSubmitting(true);
+
+    try {
+      // 1. Insert Parent Order into `orders` table
+      const { data: orderData, error: orderError } = await supabase
+        .from("orders")
+        .insert([
+          {
+            customer_name: customerName,
+            subtotal: subTotal,
+            status: "pending",
+          },
+        ])
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      // 2. Format Items for `order_items` table
+      const itemsToInsert = cart.map((item) => ({
+        order_id: orderData.id,
+        name: item.name,
+        category: item.category,
+        price: item.price,
+        customizations: {
+          temp: item.temp,
+          milk: item.milk,
+          foam: item.foam,
+          sparklingType: item.sparklingType,
+        },
+      }));
+
+      // 3. Insert Items linked to order_id
+      const { error: itemsError } = await supabase
+        .from("order_items")
+        .insert(itemsToInsert);
+
+      if (itemsError) throw itemsError;
+
+      // 4. Reset Cart and Input Form
+      setCart([]);
+      setCustomerName("");
+      alert("Order successfully placed!");
+    } catch (error) {
+      console.error("Error submitting order to Supabase:", error.message);
+      alert("Failed to place order. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen p-6 flex flex-col bg-gray-50">
 
       {/* HEADER SECTION */}
       <header className="relative flex items-center justify-between pb-6 mb-6">
-        <div
-          className="text-sm font-semibold tracking-wider text-gray-500 uppercase hover:text-black transition-colors"
-        >
+        <div className="text-sm font-semibold tracking-wider text-gray-500 uppercase hover:text-black transition-colors cursor-pointer">
           Home
         </div>
         <h1 className="absolute left-1/2 -translate-x-1/2 font-meddon text-4xl font-bold text-stone-800">
@@ -137,7 +190,6 @@ export default function CreateOrder() {
                       onClick={() => handleOpenAddModal(item)}
                       className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-amber-600 transition-all text-left flex flex-col justify-between overflow-hidden min-h-[140px]"
                     >
-                      {/* Image check */}
                       {item.image && (
                         <div className="w-full h-24 bg-gray-100 overflow-hidden">
                           <img
@@ -174,7 +226,8 @@ export default function CreateOrder() {
                 placeholder="Enter customer name..."
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black transition-all" 
+                disabled={isSubmitting}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black transition-all disabled:bg-gray-100" 
               />
             </div>
 
@@ -188,42 +241,43 @@ export default function CreateOrder() {
                     key={item.id} 
                     className="flex justify-between items-start border-b border-gray-100 pb-3"
                   >
-                    <div className="pr-2">
+                    <div className="pr-2 flex-1">
                       <p className="font-semibold text-sm text-gray-700">{item.name}</p>
                       <p className="text-xs text-gray-500">
-                        {item.temp} {item.milk ? `• ${item.milk}` : ""}
+                        {item.temp ? `${item.temp} ` : ""}
+                        {item.milk ? `• ${item.milk} ` : ""}
+                        {item.sparklingType ? `• ${item.sparklingType}` : ""}
                       </p>
-                      {item.foam !== "None" && (
-                        <p className="text-xs text-amber-700 font-medium"> + {item.foam}</p>
+                      {item.foam && item.foam !== "None" && (
+                        <p className="text-xs text-amber-700 font-medium">+ {item.foam}</p>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-stone-800 mr-1">
+                    <div className="flex items-center gap-2 mr-3">
+                      <span className="font-bold text-sm text-stone-800">
                         ${item.price.toFixed(2)}
                       </span>
                     </div>
 
                     <div className="flex flex-col gap-2">
-                        {/* Edit item button */}
-                        <button 
-                            onClick={() => handleOpenEditModal(item)}
-                            className="w-14 bg-gray-300 hover:bg-amber-800 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-2 rounded-xl transition-colors shadow-md"
-                            title="Edit Item"
-                        >
-                            Edit
-                        </button>
+                      <button 
+                        onClick={() => handleOpenEditModal(item)}
+                        disabled={isSubmitting}
+                        className="px-3 bg-gray-200 hover:bg-amber-800 hover:text-white disabled:opacity-50 text-gray-700 font-bold py-1 rounded-lg text-xs transition-colors shadow-sm"
+                        title="Edit Item"
+                      >
+                        Edit
+                      </button>
 
-                        {/* Remove Item button */}
-                        <button 
-                            onClick={() => handleRemoveFromCart(item.id)}
-                            className="w-14 bg-red-900/75 hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-2 rounded-xl transition-colors shadow-md"
-                            title="Remove Item"
-                        >
-                            ✕
-                        </button>
+                      <button 
+                        onClick={() => handleRemoveFromCart(item.id)}
+                        disabled={isSubmitting}
+                        className="px-3 bg-red-100 hover:bg-red-800 hover:text-white disabled:opacity-50 text-red-700 font-bold py-1 rounded-lg text-xs transition-colors shadow-sm"
+                        title="Remove Item"
+                      >
+                        ✕
+                      </button>
                     </div>
-                  
                   </div>
                 ))
               )}
@@ -237,10 +291,11 @@ export default function CreateOrder() {
               <span>${subTotal.toFixed(2)}</span>
             </div>
             <button
-              disabled={cart.length === 0 || !customerName.trim()}
-              className="w-full bg-black hover:bg-amber-900 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-3.5 rounded-xl transition-colors shadow-md"
+              disabled={cart.length === 0 || !customerName.trim() || isSubmitting}
+              onClick={handlePlaceOrder}
+              className="w-full bg-black hover:bg-amber-900 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-3.5 rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
             >
-              Place Order
+              {isSubmitting ? "Submitting Order..." : "Place Order"}
             </button>
           </div>
         </div>
@@ -268,120 +323,113 @@ export default function CreateOrder() {
               </button>
             </div>
 
-            {/* Frap: No Customizations*/}
+            {/* Frap */}
             {selectedItem.category === "Frappuccino" && (
               <p className="text-sm text-gray-500 italic py-2">
                 This item is served blended with its signature standard recipe and does not require customization options.
               </p>
             )}
 
-            {/* Lemonade & Sparkling drinks : Reg or  Spark only*/}
+            {/* Lemonade & Sparkling */}
             {selectedItem.category === "Lemonade & Sparkling" && (
-                <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-2">
-                        Style
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                        {["Regular", "Sparkling"].map((option) => (
-                            <button
-                                key={option}
-                                onClick={() => setSparklingType(option)}
-                                className={`py-2 rounded-lg font-medium border text-sm transition-all ${
-                                    sparklingType === option
-                                        ? "bg-black text-white border-black"
-                                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                                }`}
-                            >
-                                {option}
-                            </button>
-                        ))}
-                    </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-2">
+                  Style
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {["Regular", "Sparkling"].map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => setSparklingType(option)}
+                      className={`py-2 rounded-lg font-medium border text-sm transition-all ${
+                        sparklingType === option
+                          ? "bg-black text-white border-black"
+                          : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
                 </div>
+              </div>
             )}
 
             {/* Coffee Customizations */}
-
             {selectedItem.category === "Coffee" && (
-                <>
-                    {/* Tempe */}
-                    <div>
-                        <label className="text-xs font bold uppercase tracking-wider text-gray-600 block mb-2">
-                            Temperature
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {["Iced", "Hot"].map((option) => (
-                                <button
-                                    key={option}
-                                    onClick={() => setTemp(option)}
-                                    className={`py-2 rounded-lg font-medium border text-sm transition-all ${
-                                        temp === option
-                                            ? "bg-black text-white border-black"
-                                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                                    }`}
-                                >
-                                    {option}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+              <>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-600 block mb-2">
+                    Temperature
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["Iced", "Hot"].map((option) => (
+                      <button
+                        key={option}
+                        onClick={() => setTemp(option)}
+                        className={`py-2 rounded-lg font-medium border text-sm transition-all ${
+                          temp === option
+                            ? "bg-black text-white border-black"
+                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                    {/* Milk type */}
-                    <div>
-                        <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-2">
-                            Milk
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {["whole Milk", "Oat Milk"].map((option) => (
-                                <button
-                                    key={option}
-                                    onClick={() => setMilk(option)}
-                                    className={`py-2 rounded-lg font-medium border text-sm transition-all ${
-                                        milk === option
-                                            ? "bg-black text-white border-black"
-                                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                                    }`}
-                                >
-                                    {option}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-2">
+                    Milk
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["Whole Milk", "Oat Milk"].map((option) => (
+                      <button
+                        key={option}
+                        onClick={() => setMilk(option)}
+                        className={`py-2 rounded-lg font-medium border text-sm transition-all ${
+                          milk === option
+                            ? "bg-black text-white border-black"
+                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                    {/* Cold Foam */}
-                    <div>
-                        <label className="text-xs font-bold uppercase tracking wider text-gray-500 block mb-2">
-                            Cold Foam
-                        </label>
-                        <div className="flex flex-col gap-2">
-                            {[
-                                {label: "None", add: 0.00},
-                                {label: "Vanilla Cold Foam", add: 1.00},
-                                {label: "Sea Salt Cold Foam", add: 1.00},
-                            ].map((option) => (
-                                <button 
-                                    key={option.label}
-                                    onClick={() => setFoam(option.label)}
-                                    className={`py-2 px-4 rounded-lg font-medium border text-sm flex justify-between transition-all ${
-                                        foam === option.label
-                                            ? "bg-black text-white border-black"
-                                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                                    }`}
-                                >
-                                    <span>{option.label}</span>
-                                    <span className="text-xs opacity-80">
-                                        {option.add > 0 ? `+$${option.add.toFixed(2)}` : "Free"}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-2">
+                    Cold Foam
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { label: "None", add: 0.00 },
+                      { label: "Vanilla Cold Foam", add: 1.00 },
+                      { label: "Sea Salt Cold Foam", add: 1.00 },
+                    ].map((option) => (
+                      <button 
+                        key={option.label}
+                        onClick={() => setFoam(option.label)}
+                        className={`py-2 px-4 rounded-lg font-medium border text-sm flex justify-between transition-all ${
+                          foam === option.label
+                            ? "bg-black text-white border-black"
+                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className="text-xs opacity-80">
+                          {option.add > 0 ? `+$${option.add.toFixed(2)}` : "Free"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
-            
 
-
-
-            {/* Modal Action */}
+            {/* Modal Actions */}
             <div className="pt-2">
               <button
                 onClick={handleSaveCartItem}

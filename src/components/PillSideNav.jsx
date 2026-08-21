@@ -13,7 +13,7 @@ export default function PillSideNav() {
     const [active, setActive] = useState('home');
 
     return (
-        <aside className="h-screen p-4 flex items-center overflow-hidden">
+        <aside className="fixed top-0 -left-0 h-screen p-4 flex items-center overflow-hidden">
             <nav className="flex flex-col items-center justify-between py-6 px-3 w-16 sm:w-20 bg-white rounded-full border border-gray-200 h-[85vh]">
                 
                 {/* Top Logo Pill */}
@@ -29,8 +29,8 @@ export default function PillSideNav() {
                         
                         return (
                         <NavLink
-                            key={item.id}
-                            to={item.path}
+                            key = {item.id}
+                            to  = {item.path}
                             onClick={() => setActive(item.id)}
                             title={item.label}
                             className={`w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 ${

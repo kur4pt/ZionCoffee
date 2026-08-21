@@ -12,7 +12,7 @@ function App() {
 
       <PillSideNav />
 
-      <main className="flex-1 p-8">
+      <main className="flex-1 p-8 pl-26 min-w-0">
         <Routes>
           <Route path="/" element={<CreateOrder />} />
           <Route path="/CreateOrder" element={<CreateOrder />} />
