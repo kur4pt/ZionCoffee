@@ -3,10 +3,15 @@ import { supabase } from "../supabaseClient";
 
 export default function OrderQueue() {
   const [orders, setOrders] = useState([]);
-  const [activeTab, setActiveTab] = useState("pending"); // "pending" , "preparing" , "completed"
+  const [activeTab, setActiveTab] = useState("pending"); // "pending" | "preparing" | "completed"
   const [loading, setLoading] = useState(true);
 
-  // Helper function to format Order ID into #MMDD-XXXX format
+  // PIN & Modal State
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const MASTER_PIN = "1234";
+
   const formatSequentialOrderId = (order, allOrders) => {
     if (!order?.created_at) return "#0000-0000";
 
@@ -14,7 +19,6 @@ export default function OrderQueue() {
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
 
-    // Sort all orders chronologically to determine exact sequential position
     const sortedAll = [...allOrders].sort(
       (a, b) => new Date(a.created_at) - new Date(b.created_at)
     );
@@ -25,7 +29,6 @@ export default function OrderQueue() {
     return `#${month}${day}-${sequenceNum}`;
   };
 
-  // Initial Fetch & Realtime Subscription setup
   useEffect(() => {
     fetchOrders();
 
@@ -36,10 +39,8 @@ export default function OrderQueue() {
         { event: "*", schema: "public", table: "orders" },
         async (payload) => {
           if (payload.eventType === "INSERT") {
-            // Brief delay to allow order_items insertion to complete
             await new Promise((resolve) => setTimeout(resolve, 300));
 
-            // Fetch items for the new order ticket
             const { data: items } = await supabase
               .from("order_items")
               .select("*")
@@ -50,7 +51,6 @@ export default function OrderQueue() {
               order_items: items || [],
             };
 
-            // Append new orders to the end of the list (FIFO)
             setOrders((prev) => [
               ...prev.filter((o) => o.id !== payload.new.id),
               newOrderWithItems,
@@ -75,10 +75,10 @@ export default function OrderQueue() {
 
   const fetchOrders = async () => {
     setLoading(true);
-    // Sort ascending so oldest orders are first (FIFO)
     const { data, error } = await supabase
       .from("orders")
       .select("*, order_items(*)")
+      .eq("archived", false)
       .order("created_at", { ascending: true });
 
     if (!error && data) {
@@ -87,17 +87,13 @@ export default function OrderQueue() {
     setLoading(false);
   };
 
-  // Helper function to handle status updates across all stages
   const updateOrderStatus = async (orderId, newStatus) => {
-    const updatePayload = {
-      status: newStatus,
-    };
+    const updatePayload = { status: newStatus };
 
     if (newStatus === "completed") {
       updatePayload.completed_at = new Date().toISOString();
     }
 
-    //  UI update
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, ...updatePayload } : o))
     );
@@ -108,8 +104,77 @@ export default function OrderQueue() {
       .eq("id", orderId);
 
     if (error) {
-      console.error(`Error updating order status to ${newStatus}:`, error.message);
-      fetchOrders(); // Rollback/refetch on failure
+      console.error(`Error updating order status:`, error.message);
+      fetchOrders();
+    }
+  };
+
+  const handleCloseDay = async () => {
+    if (pin !== MASTER_PIN) {
+      setPinError("Invalid PIN. Please try again.");
+      return;
+    }
+
+    const completedOrders = orders.filter((o) => o.status === "completed");
+    if (completedOrders.length === 0) {
+      alert("No completed orders to clear.");
+      setIsPinModalOpen(false);
+      setPin("");
+      return;
+    }
+
+    const totalOrders = completedOrders.length;
+    const grossSales = completedOrders.reduce(
+      (sum, o) => sum + Number(o.subtotal || 0),
+      0
+    );
+    const avgOrderValue = grossSales / totalOrders;
+
+    const totalPrepMinutes = completedOrders.reduce((sum, o) => {
+      if (!o.completed_at || !o.created_at) return sum;
+      const start = new Date(o.created_at);
+      const end = new Date(o.completed_at);
+      const diffMinutes = (end - start) / (1000 * 60);
+      return sum + Math.max(0, diffMinutes);
+    }, 0);
+
+    const avgPrepTimeMinutes = totalPrepMinutes / totalOrders;
+    const todayDate = new Date().toISOString().split("T")[0];
+
+    try {
+      const { error: summaryError } = await supabase
+        .from("daily_summaries")
+        .upsert(
+          [
+            {
+              summary_date: todayDate,
+              total_orders: totalOrders,
+              gross_sales: grossSales,
+              avg_order_value: avgOrderValue,
+              avg_prep_time_minutes: avgPrepTimeMinutes,
+            },
+          ],
+          { onConflict: "summary_date" }
+        );
+
+      if (summaryError) throw summaryError;
+
+      const completedIds = completedOrders.map((o) => o.id);
+      const { error: archiveError } = await supabase
+        .from("orders")
+        .update({ archived: true })
+        .in("id", completedIds);
+
+      if (archiveError) throw archiveError;
+
+      setOrders((prev) => prev.filter((o) => o.status !== "completed"));
+      setIsPinModalOpen(false);
+      setPin("");
+      setPinError("");
+      alert("Daily snapshot created and completed orders archived!");
+    } catch (err) {
+      console.error("Error closing day:", err.message);
+      alert("Failed to close day. Check console for details.");
     }
   };
 
@@ -117,10 +182,9 @@ export default function OrderQueue() {
 
   return (
     <div className="min-h-screen p-6 bg-gray-100 flex flex-col">
-      <header className="flex flex-col sm:flex-row justify-between items-center pb-6 border-b mb-6 gap-4">
+      <header className="flex flex-col md:flex-row justify-between items-center pb-6 border-b mb-6 gap-4">
         <h1 className="text-3xl font-bold text-stone-800">Barista KDS</h1>
 
-        {/* 3 Section Navigation Tabs */}
         <div className="flex bg-gray-200 p-1 rounded-xl">
           <button
             onClick={() => setActiveTab("pending")}
@@ -130,7 +194,7 @@ export default function OrderQueue() {
                 : "text-gray-600 hover:text-black"
             }`}
           >
-            New Orders ({orders.filter((o) => o.status === "pending").length})
+            New ({orders.filter((o) => o.status === "pending").length})
           </button>
 
           <button
@@ -157,6 +221,20 @@ export default function OrderQueue() {
         </div>
       </header>
 
+      {activeTab === "completed" && filteredOrders.length > 0 && (
+        <div className="mb-6 flex justify-end">
+          <button
+            onClick={() => {
+              setIsPinModalOpen(true);
+              setPinError("");
+            }}
+            className="bg-red-700 hover:bg-red-800 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition-colors flex items-center gap-2"
+          >
+             End of Day / Clear Completed
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-gray-500">
           Loading active orders...
@@ -176,7 +254,6 @@ export default function OrderQueue() {
                 <div className="flex justify-between items-start border-b pb-3 mb-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      {/* Sequential Date & ID Badge (#MMDD-0001) */}
                       <span className="text-xs font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-200">
                         {formatSequentialOrderId(order, orders)}
                       </span>
@@ -196,7 +273,6 @@ export default function OrderQueue() {
                   </span>
                 </div>
 
-                {/* Items listing */}
                 <div className="space-y-3">
                   {order.order_items?.map((item) => (
                     <div key={item.id} className="text-sm">
@@ -221,7 +297,6 @@ export default function OrderQueue() {
                 </div>
               </div>
 
-              {/* Action Buttons Based on Lifecycle Stage */}
               <div className="mt-6">
                 {order.status === "pending" && (
                   <button
@@ -249,6 +324,53 @@ export default function OrderQueue() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* END OF DAY PIN MODAL */}
+      {isPinModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-xl font-bold text-gray-800">
+              End of Day Authorization
+            </h3>
+            <p className="text-sm text-gray-500">
+              Enter manager PIN to clear completed orders and save the daily summary snapshot.
+            </p>
+
+            <input
+              type="password"
+              maxLength={4}
+              placeholder="Enter PIN..."
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              className="w-full text-center text-2xl tracking-widest px-4 py-3 border rounded-xl font-mono focus:ring-2 focus:ring-black outline-none"
+            />
+
+            {pinError && (
+              <p className="text-xs text-red-600 font-bold text-center">
+                {pinError}
+              </p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setIsPinModalOpen(false);
+                  setPin("");
+                }}
+                className="flex-1 bg-gray-200 hover:bg-gray-300 font-bold py-2.5 rounded-xl text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCloseDay}
+                className="flex-1 bg-red-700 hover:bg-red-800 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
+              >
+                Confirm & Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
