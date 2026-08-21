@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
+import { CheckCircle2, AlertCircle, X } from "lucide-react";
 
 export default function OrderQueue() {
   const [orders, setOrders] = useState([]);
@@ -11,6 +12,16 @@ export default function OrderQueue() {
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
   const MASTER_PIN = "1234";
+
+  // In-App Toast State
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+
+  const showToast = (message, type = "success") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: "", type: "success" });
+    }, 4000);
+  };
 
   const formatSequentialOrderId = (order, allOrders) => {
     if (!order?.created_at) return "#0000-0000";
@@ -117,7 +128,7 @@ export default function OrderQueue() {
 
     const completedOrders = orders.filter((o) => o.status === "completed");
     if (completedOrders.length === 0) {
-      alert("No completed orders to clear.");
+      showToast("No completed orders to clear.", "error");
       setIsPinModalOpen(false);
       setPin("");
       return;
@@ -171,17 +182,19 @@ export default function OrderQueue() {
       setIsPinModalOpen(false);
       setPin("");
       setPinError("");
-      alert("Daily snapshot created and completed orders archived!");
+      
+      // Trigger Aesthetic In-App Notification
+      showToast("Daily snapshot created & completed orders archived!", "success");
     } catch (err) {
       console.error("Error closing day:", err.message);
-      alert("Failed to close day. Check console for details.");
+      showToast("Failed to close day. Check console for details.", "error");
     }
   };
 
   const filteredOrders = orders.filter((order) => order.status === activeTab);
 
   return (
-    <div className="min-h-screen p-6 bg-gray-100 flex flex-col">
+    <div className="min-h-screen p-6 bg-gray-100 flex flex-col relative">
       <header className="flex flex-col md:flex-row justify-between items-center pb-6 border-b mb-6 gap-4">
         <h1 className="text-3xl font-bold text-stone-800">Barista Order Queue</h1>
 
@@ -228,7 +241,7 @@ export default function OrderQueue() {
               setIsPinModalOpen(true);
               setPinError("");
             }}
-            className="bg-red-700 hover:bg-red-800 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition-colors flex items-center gap-2"
+            className="bg-red-700 hover:bg-red-800 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm"
           >
              End of Day / Clear Completed
           </button>
@@ -359,7 +372,7 @@ export default function OrderQueue() {
                   setIsPinModalOpen(false);
                   setPin("");
                 }}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 font-bold py-2.5 rounded-xl text-sm transition-colors"
+                className="flex-1 bg-gray-200 hover:bg-gray-300 font-bold py-2.5 rounded-xl text-sm transition-colors text-stone-700"
               >
                 Cancel
               </button>
@@ -371,6 +384,30 @@ export default function OrderQueue() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* FLOATING TOAST NOTIFICATION */}
+      {toast.show && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border transition-all duration-300 ${
+            toast.type === "error"
+              ? "bg-rose-950 text-rose-100 border-rose-800"
+              : "bg-stone-900 text-stone-100 border-stone-800"
+          }`}
+        >
+          {toast.type === "error" ? (
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          )}
+          <span className="text-sm font-medium pr-2">{toast.message}</span>
+          <button
+            onClick={() => setToast({ show: false, message: "", type: "success" })}
+            className="text-stone-400 hover:text-white p-1 rounded-lg transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

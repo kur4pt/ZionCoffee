@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import AdminOverview from "./AdminOverview";
 import AdminMenu from "./AdminMenu";
+import AdminAnalytics from "./AdminAnalytics";
 
 export default function AdminLayout({ setActiveMainTab, onLogout }) {
   const [activeAdminSection, setActiveAdminSection] = useState("overview");
@@ -8,7 +9,7 @@ export default function AdminLayout({ setActiveMainTab, onLogout }) {
   const navItems = [
     { id: "overview", label: "Overview" },
     { id: "menu", label: "Menu" },
-    { id: "orders", label: "Orders" },
+    // { id: "orders", label: "Orders" },
     { id: "analytics", label: "Analytics" },
   ];
 
@@ -38,17 +39,19 @@ export default function AdminLayout({ setActiveMainTab, onLogout }) {
               </button>
             ))}
           </nav>
-
-          <button
-              onClick={onLogout}
-              className="text-md bg-red-950 hover:bg-red-900 text-gray-200 px-6 py-3 rounded-lg border border-red-800 font-bold transition-colors"
-            >
-              Lock
-            </button>
         </div>
 
-        <div className="border-t border-amber-800 pt-2 mt-6 text-xs text-amber-200/60 text-center">
-          Zion Coffee POS Admin v1.0
+        <div className="space-y-4">
+          <button
+            onClick={onLogout}
+            className="w-full text-md bg-red-950 hover:bg-red-900 text-gray-200 px-6 py-3 rounded-lg border border-red-800 font-bold transition-colors"
+          >
+            Lock
+          </button>
+
+          <div className="border-t border-amber-800 pt-2 text-xs text-amber-200/60 text-center">
+            Zion Coffee POS Admin v1.0
+          </div>
         </div>
       </aside>
 
@@ -58,6 +61,12 @@ export default function AdminLayout({ setActiveMainTab, onLogout }) {
           <AdminOverview onNavigateToMenu={() => setActiveAdminSection("menu")} />
         )}
         {activeAdminSection === "menu" && <AdminMenu />}
+        {activeAdminSection === "orders" && (
+          <div className="p-8 text-center text-stone-400 bg-white rounded-2xl border">
+            Orders component coming soon.
+          </div>
+        )}
+        {activeAdminSection === "analytics" && <AdminAnalytics />}
       </main>
     </div>
   );

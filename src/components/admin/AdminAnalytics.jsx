@@ -54,7 +54,7 @@ export default function AdminAnalytics() {
       }
 
       const { data: orders, error: ordersError } = await query;
-      console.log("order:", orders, "Error:", ordersError);
+      console.log("Supabase Orders Output:", orders, "Error:", ordersError);
 
       if (ordersError) {
         setErrorMessage(`Supabase Error: ${ordersError.message}`);
@@ -63,7 +63,7 @@ export default function AdminAnalytics() {
       }
 
       if (!orders || orders.length === 0) {
-        setDebugInfo("No records returned from 'orders' table.");
+        setDebugInfo("No records returned from 'orders' table. Verify RLS permissions or database entries.");
         setMetrics({ totalRevenue: 0, totalOrders: 0, avgOrderValue: 0, avgPrepTimeMinutes: 0 });
         setSalesByDay([]);
         setDailySummaries([]);
@@ -73,10 +73,11 @@ export default function AdminAnalytics() {
         return;
       }
 
-      const validOrders = orders.filter((o) => o.status !== "cancelled");
+      // Include orders even if status is null or undefined (only exclude explicitly 'cancelled')
+      const validOrders = orders.filter((o) => (o.status ? o.status.toLowerCase() !== "cancelled" : true));
 
       const totalRevenue = validOrders.reduce((acc, curr) => {
-        return acc + Number(curr.subtotal || 0);
+        return acc + Number(curr.subtotal || curr.price || curr.total_amount || 0);
       }, 0);
 
       const totalOrders = validOrders.length;
@@ -110,7 +111,7 @@ export default function AdminAnalytics() {
         const dateObj = new Date(order.created_at || Date.now());
         const dayName = dateObj.toLocaleDateString("en-US", { weekday: "short" });
         const dateKey = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        const orderTotal = Number(order.subtotal || 0);
+        const orderTotal = Number(order.subtotal || order.price || order.total_amount || 0);
 
         if (daysMap[dayName] !== undefined) {
           daysMap[dayName] += orderTotal;
@@ -138,10 +139,12 @@ export default function AdminAnalytics() {
         }));
       setDailySummaries(summaries);
 
-      // Fetch product volume using matching 'name' column
+      // Fetch order_items data
       const { data: orderItems, error: itemsError } = await supabase
         .from("order_items")
         .select("name");
+      
+      console.log("Supabase Order Items Output:", orderItems, "Error:", itemsError);
 
       if (!itemsError && orderItems && orderItems.length > 0) {
         const itemCountsMap = {};
@@ -155,7 +158,7 @@ export default function AdminAnalytics() {
           .sort((a, b) => b.count - a.count);
 
         setTopItems(sortedItems.slice(0, 5));
-        setBottomItems(sortedItems.slice(-3).reverse());
+        setBottomItems(sortedItems.length > 1 ? sortedItems.slice(-3).reverse() : []);
       }
 
     } catch (err) {
