@@ -8,8 +8,8 @@ export default function AdminAuthGate({ setActiveMainTab }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  // Pulls password from .env file (with a fallback default)
-  const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "barista123";
+  // Pulls password from .env file
+  const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
 
   const handleLogin = (e) => {
     e.preventDefault();
