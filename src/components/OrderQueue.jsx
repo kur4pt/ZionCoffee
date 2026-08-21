@@ -3,8 +3,27 @@ import { supabase } from "../supabaseClient";
 
 export default function OrderQueue() {
   const [orders, setOrders] = useState([]);
-  const [activeTab, setActiveTab] = useState("pending"); // "pending" | "completed"
+  const [activeTab, setActiveTab] = useState("pending"); // "pending" , "preparing" , "completed"
   const [loading, setLoading] = useState(true);
+
+  // Helper function to format Order ID into #MMDD-XXXX format
+  const formatSequentialOrderId = (order, allOrders) => {
+    if (!order?.created_at) return "#0000-0000";
+
+    const date = new Date(order.created_at);
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    // Sort all orders chronologically to determine exact sequential position
+    const sortedAll = [...allOrders].sort(
+      (a, b) => new Date(a.created_at) - new Date(b.created_at)
+    );
+
+    const orderIndex = sortedAll.findIndex((o) => o.id === order.id);
+    const sequenceNum = String(orderIndex + 1).padStart(4, "0");
+
+    return `#${month}${day}-${sequenceNum}`;
+  };
 
   // Initial Fetch & Realtime Subscription setup
   useEffect(() => {
@@ -17,14 +36,25 @@ export default function OrderQueue() {
         { event: "*", schema: "public", table: "orders" },
         async (payload) => {
           if (payload.eventType === "INSERT") {
-            // Fetch items for the new order
+            // Brief delay to allow order_items insertion to complete
+            await new Promise((resolve) => setTimeout(resolve, 300));
+
+            // Fetch items for the new order ticket
             const { data: items } = await supabase
               .from("order_items")
               .select("*")
               .eq("order_id", payload.new.id);
 
-            const newOrderWithItems = { ...payload.new, order_items: items || [] };
-            setOrders((prev) => [newOrderWithItems, ...prev]);
+            const newOrderWithItems = {
+              ...payload.new,
+              order_items: items || [],
+            };
+
+            // Append new orders to the end of the list (FIFO)
+            setOrders((prev) => [
+              ...prev.filter((o) => o.id !== payload.new.id),
+              newOrderWithItems,
+            ]);
           } else if (payload.eventType === "UPDATE") {
             setOrders((prev) =>
               prev.map((order) =>
@@ -45,10 +75,11 @@ export default function OrderQueue() {
 
   const fetchOrders = async () => {
     setLoading(true);
+    // Sort ascending so oldest orders are first (FIFO)
     const { data, error } = await supabase
       .from("orders")
       .select("*, order_items(*)")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: true });
 
     if (!error && data) {
       setOrders(data);
@@ -56,17 +87,29 @@ export default function OrderQueue() {
     setLoading(false);
   };
 
-  const markOrderCompleted = async (orderId) => {
+  // Helper function to handle status updates across all stages
+  const updateOrderStatus = async (orderId, newStatus) => {
+    const updatePayload = {
+      status: newStatus,
+    };
+
+    if (newStatus === "completed") {
+      updatePayload.completed_at = new Date().toISOString();
+    }
+
+    //  UI update
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, ...updatePayload } : o))
+    );
+
     const { error } = await supabase
       .from("orders")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", orderId);
 
     if (error) {
-      console.error("Error updating order:", error.message);
+      console.error(`Error updating order status to ${newStatus}:`, error.message);
+      fetchOrders(); // Rollback/refetch on failure
     }
   };
 
@@ -74,10 +117,10 @@ export default function OrderQueue() {
 
   return (
     <div className="min-h-screen p-6 bg-gray-100 flex flex-col">
-      <header className="flex justify-between items-center pb-6 border-b mb-6">
+      <header className="flex flex-col sm:flex-row justify-between items-center pb-6 border-b mb-6 gap-4">
         <h1 className="text-3xl font-bold text-stone-800">Barista KDS</h1>
-        
-        {/* Navigation Tabs */}
+
+        {/* 3 Section Navigation Tabs */}
         <div className="flex bg-gray-200 p-1 rounded-xl">
           <button
             onClick={() => setActiveTab("pending")}
@@ -87,8 +130,20 @@ export default function OrderQueue() {
                 : "text-gray-600 hover:text-black"
             }`}
           >
-            Active Queue ({orders.filter((o) => o.status === "pending").length})
+            New Orders ({orders.filter((o) => o.status === "pending").length})
           </button>
+
+          <button
+            onClick={() => setActiveTab("preparing")}
+            className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+              activeTab === "preparing"
+                ? "bg-amber-800 text-white shadow-sm"
+                : "text-gray-600 hover:text-black"
+            }`}
+          >
+            Preparing ({orders.filter((o) => o.status === "preparing").length})
+          </button>
+
           <button
             onClick={() => setActiveTab("completed")}
             className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
@@ -97,7 +152,7 @@ export default function OrderQueue() {
                 : "text-gray-600 hover:text-black"
             }`}
           >
-            Completed
+            Ready Orders ({orders.filter((o) => o.status === "completed").length})
           </button>
         </div>
       </header>
@@ -120,10 +175,16 @@ export default function OrderQueue() {
               <div>
                 <div className="flex justify-between items-start border-b pb-3 mb-3">
                   <div>
-                    <h2 className="text-xl font-bold text-stone-800">
-                      {order.customer_name}
-                    </h2>
-                    <span className="text-xs text-gray-400">
+                    <div className="flex items-center gap-2">
+                      {/* Sequential Date & ID Badge (#MMDD-0001) */}
+                      <span className="text-xs font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-200">
+                        {formatSequentialOrderId(order, orders)}
+                      </span>
+                      <h2 className="text-xl font-bold text-stone-800">
+                        {order.customer_name}
+                      </h2>
+                    </div>
+                    <span className="text-xs text-gray-400 block mt-1">
                       {new Date(order.created_at).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -145,7 +206,8 @@ export default function OrderQueue() {
                           {[
                             item.customizations.temp,
                             item.customizations.milk,
-                            item.customizations.foam && item.customizations.foam !== "None"
+                            item.customizations.foam &&
+                            item.customizations.foam !== "None"
                               ? `+ ${item.customizations.foam}`
                               : null,
                             item.customizations.sparklingType,
@@ -159,15 +221,32 @@ export default function OrderQueue() {
                 </div>
               </div>
 
-              {/* Action Button */}
-              {order.status === "pending" && (
-                <button
-                  onClick={() => markOrderCompleted(order.id)}
-                  className="mt-6 w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-xl transition-colors shadow-sm"
-                >
-                  Mark Complete ✓
-                </button>
-              )}
+              {/* Action Buttons Based on Lifecycle Stage */}
+              <div className="mt-6">
+                {order.status === "pending" && (
+                  <button
+                    onClick={() => updateOrderStatus(order.id, "preparing")}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-colors shadow-sm"
+                  >
+                    Start Preparing →
+                  </button>
+                )}
+
+                {order.status === "preparing" && (
+                  <button
+                    onClick={() => updateOrderStatus(order.id, "completed")}
+                    className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-xl transition-colors shadow-sm"
+                  >
+                    Mark Ready ✓
+                  </button>
+                )}
+
+                {order.status === "completed" && (
+                  <div className="text-center text-xs font-semibold text-emerald-800 bg-emerald-50 py-2 rounded-lg border border-emerald-200">
+                    Order Picked Up / Completed
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>

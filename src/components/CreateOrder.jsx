@@ -69,8 +69,9 @@ export default function CreateOrder() {
     const isCoffee = selectedItem.category === "Coffee";
     const isLemonade = selectedItem.category === "Lemonade & Sparkling";
 
-    const foamPrice = foam === "Sea Salt Cold Foam" || foam === "Vanilla Cold Foam" ? 1.00 : 0;
-    const basePrice = selectedItem.price;
+    // Always reference the true base menu price
+    const basePrice = selectedItem.price; 
+    const foamPrice = isCoffee && (foam === "Sea Salt Cold Foam" || foam === "Vanilla Cold Foam") ? 1.00 : 0;
     const finalPrice = basePrice + foamPrice;
 
     const payload = {
@@ -312,7 +313,7 @@ export default function CreateOrder() {
                   {selectedItem.name}
                 </h3>
                 <p className="text-sm text-amber-800 font-semibold">
-                  ${selectedItem.price.toFixed(2)}
+                  Base Price: ${selectedItem.price.toFixed(2)}
                 </p>
               </div>
               <button
