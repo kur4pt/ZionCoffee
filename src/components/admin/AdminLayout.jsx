@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import AdminOverview from "./AdminOverview";
+import AdminOverview from "./AdminOverView";
 import AdminMenu from "./AdminMenu";
 import AdminAnalytics from "./AdminAnalytics";
 
