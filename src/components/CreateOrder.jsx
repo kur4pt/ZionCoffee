@@ -1,18 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 
 export default function CreateOrder() {
-  const menuItems = [
-    { id: 1, name: "Spanish Latte",         price: 6.00, category: "Coffee", image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?w=300&q=80" },
-    { id: 2, name: "Mazapan Latte",         price: 6.00, category: "Coffee" },
-    { id: 3, name: "Caramel Latte",         price: 6.00, category: "Coffee" },
-    { id: 4, name: "Mazapan Frap",          price: 6.00, category: "Frappuccino" },
-    { id: 5, name: "Caramel Frap",          price: 6.00, category: "Frappuccino" },
-    { id: 6, name: "Mango Lemonade",        price: 5.00, category: "Lemonade & Sparkling" },
-    { id: 7, name: "Strawberry Lemonade",   price: 5.00, category: "Lemonade & Sparkling" },
-    { id: 8, name: "Sunset Lemonade",       price: 5.00, category: "Lemonade & Sparkling" },
-    { id: 9, name: "Mango Dragonfruit",     price: 5.00, category: "Lemonade & Sparkling" },
-  ];
+  // Replace static array with dynamic state
+  const [menuItems, setMenuItems] = useState([]);
+  const [loadingMenu, setLoadingMenu] = useState(true);
 
   // Dynamic Cart State
   const [cart, setCart] = useState([]);
@@ -26,6 +18,29 @@ export default function CreateOrder() {
   const [milk, setMilk] = useState("Whole Milk");
   const [foam, setFoam] = useState("None");
   const [sparklingType, setSparklingType] = useState("Regular");
+
+  // Fetch menu items from Supabase on component mount
+  useEffect(() => {
+    fetchMenuItems();
+  }, []);
+
+  const fetchMenuItems = async () => {
+    try {
+      setLoadingMenu(true);
+      const { data, error } = await supabase
+        .from("menu_items")
+        .select("*")
+        .eq("is_available", true)
+        .order("id", { ascending: true });
+
+      if (error) throw error;
+      setMenuItems(data || []);
+    } catch (err) {
+      console.error("Error loading menu from Supabase:", err.message);
+    } finally {
+      setLoadingMenu(false);
+    }
+  };
 
   const categories = Array.from(new Set(menuItems.map((item) => item.category)));
 
@@ -54,7 +69,7 @@ export default function CreateOrder() {
     setEditingItemId(cartItem.id);
     setTemp(cartItem.temp || "Iced");
     setMilk(cartItem.milk || "Whole Milk");
-    setFoam(cartItem.foam || "None");
+    setFoam(cartItem.temp === "Hot" ? "None" : cartItem.foam || "None");
     setSparklingType(cartItem.sparklingType || "Regular");
   };
 
@@ -69,9 +84,12 @@ export default function CreateOrder() {
     const isCoffee = selectedItem.category === "Coffee";
     const isLemonade = selectedItem.category === "Lemonade & Sparkling";
 
-    // Always reference the true base menu price
-    const basePrice = selectedItem.price; 
-    const foamPrice = isCoffee && (foam === "Sea Salt Cold Foam" || foam === "Vanilla Cold Foam") ? 1.00 : 0;
+    // Only apply cold foam options if drink is iced
+    const activeFoam = isCoffee && temp === "Iced" ? foam : "None";
+
+    // Convert price to number to safeguard database numeric strings
+    const basePrice = Number(selectedItem.price); 
+    const foamPrice = activeFoam !== "None" ? 1.00 : 0;
     const finalPrice = basePrice + foamPrice;
 
     const payload = {
@@ -79,10 +97,10 @@ export default function CreateOrder() {
       category: selectedItem.category,
       temp: isCoffee ? temp : null,
       milk: isCoffee ? milk : null,
-      foam: isCoffee ? foam : null,
+      foam: isCoffee && temp === "Iced" ? activeFoam : null,
       sparklingType: isLemonade ? sparklingType : null,
       basePrice,
-      price: finalPrice,
+      price: parseFloat(finalPrice.toFixed(2)),
     };
 
     if (editingItemId) {
@@ -110,7 +128,6 @@ export default function CreateOrder() {
     setIsSubmitting(true);
 
     try {
-      // 1. Insert Parent Order into `orders` table
       const { data: orderData, error: orderError } = await supabase
         .from("orders")
         .insert([
@@ -125,7 +142,6 @@ export default function CreateOrder() {
 
       if (orderError) throw orderError;
 
-      // 2. Format Items for `order_items` table
       const itemsToInsert = cart.map((item) => ({
         order_id: orderData.id,
         name: item.name,
@@ -139,14 +155,12 @@ export default function CreateOrder() {
         },
       }));
 
-      // 3. Insert Items linked to order_id
       const { error: itemsError } = await supabase
         .from("order_items")
         .insert(itemsToInsert);
 
       if (itemsError) throw itemsError;
 
-      // 4. Reset Cart and Input Form
       setCart([]);
       setCustomerName("");
       alert("Order successfully placed!");
@@ -177,38 +191,46 @@ export default function CreateOrder() {
 
         {/* LEFT COLUMN: Menu Categories & Items */}
         <div className="lg:col-span-2 space-y-8">
-          {categories.map((category) => (
-            <section key={category}>
-              <h2 className="text-xl font-bold text-stone-800 mb-4 border-b pb-2">
-                {category}
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {menuItems
-                  .filter((item) => item.category === category)
-                  .map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleOpenAddModal(item)}
-                      className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-amber-600 transition-all text-left flex flex-col justify-between overflow-hidden min-h-[140px]"
-                    >
-                      {item.image && (
-                        <div className="w-full h-24 bg-gray-100 overflow-hidden">
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                          />
+          {loadingMenu ? (
+            <div className="text-center py-12 text-stone-500 font-semibold">
+              Loading menu items...
+            </div>
+          ) : (
+            categories.map((category) => (
+              <section key={category}>
+                <h2 className="text-xl font-bold text-stone-800 mb-4 border-b pb-2">
+                  {category}
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {menuItems
+                    .filter((item) => item.category === category)
+                    .map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => handleOpenAddModal(item)}
+                        className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-amber-600 transition-all text-left flex flex-col justify-between overflow-hidden min-h-[140px]"
+                      >
+                        {item.image_url && (
+                          <div className="w-full h-24 bg-gray-100 overflow-hidden">
+                            <img
+                              src={item.image_url}
+                              alt={item.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            />
+                          </div>
+                        )}
+                        <div className="p-3 flex flex-col justify-between flex-1">
+                          <span className="font-semibold text-gray-800">{item.name}</span>
+                          <span className="text-amber-800 font-bold mt-2">
+                            ${Number(item.price).toFixed(2)}
+                          </span>
                         </div>
-                      )}
-                      <div className="p-3 flex flex-col justify-between flex-1">
-                        <span className="font-semibold text-gray-800">{item.name}</span>
-                        <span className="text-amber-800 font-bold mt-2">${item.price.toFixed(2)}</span>
-                      </div>
-                    </button>
-                  ))}
-              </div>
-            </section>
-          ))}
+                      </button>
+                    ))}
+                </div>
+              </section>
+            ))
+          )}
         </div>
 
         {/* RIGHT COLUMN: Current Order Sidebar */}
@@ -313,7 +335,7 @@ export default function CreateOrder() {
                   {selectedItem.name}
                 </h3>
                 <p className="text-sm text-amber-800 font-semibold">
-                  Base Price: ${selectedItem.price.toFixed(2)}
+                  Base Price: ${Number(selectedItem.price).toFixed(2)}
                 </p>
               </div>
               <button
@@ -366,7 +388,13 @@ export default function CreateOrder() {
                     {["Iced", "Hot"].map((option) => (
                       <button
                         key={option}
-                        onClick={() => setTemp(option)}
+                        onClick={() => {
+                          setTemp(option);
+                          // Auto reset cold foam state if switching to Hot
+                          if (option === "Hot") {
+                            setFoam("None");
+                          }
+                        }}
                         className={`py-2 rounded-lg font-medium border text-sm transition-all ${
                           temp === option
                             ? "bg-black text-white border-black"
@@ -400,33 +428,36 @@ export default function CreateOrder() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-2">
-                    Cold Foam
-                  </label>
-                  <div className="flex flex-col gap-2">
-                    {[
-                      { label: "None", add: 0.00 },
-                      { label: "Vanilla Cold Foam", add: 1.00 },
-                      { label: "Sea Salt Cold Foam", add: 1.00 },
-                    ].map((option) => (
-                      <button 
-                        key={option.label}
-                        onClick={() => setFoam(option.label)}
-                        className={`py-2 px-4 rounded-lg font-medium border text-sm flex justify-between transition-all ${
-                          foam === option.label
-                            ? "bg-black text-white border-black"
-                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                        }`}
-                      >
-                        <span>{option.label}</span>
-                        <span className="text-xs opacity-80">
-                          {option.add > 0 ? `+$${option.add.toFixed(2)}` : "Free"}
-                        </span>
-                      </button>
-                    ))}
+                {/* Only render Cold Foam option if drink temperature is Iced */}
+                {temp === "Iced" && (
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-2">
+                      Cold Foam
+                    </label>
+                    <div className="flex flex-col gap-2">
+                      {[
+                        { label: "None", add: 0.00 },
+                        { label: "Vanilla Cold Foam", add: 1.00 },
+                        { label: "Sea Salt Cold Foam", add: 1.00 },
+                      ].map((option) => (
+                        <button 
+                          key={option.label}
+                          onClick={() => setFoam(option.label)}
+                          className={`py-2 px-4 rounded-lg font-medium border text-sm flex justify-between transition-all ${
+                            foam === option.label
+                              ? "bg-black text-white border-black"
+                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                          }`}
+                        >
+                          <span>{option.label}</span>
+                          <span className="text-xs opacity-80">
+                            {option.add > 0 ? `+$${option.add.toFixed(2)}` : "Free"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             )}
 

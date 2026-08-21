@@ -1,30 +1,29 @@
-import { Routes, Route } from "react-router-dom";
+import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import PillSideNav from "./components/PillSideNav";
+import AdminAuthGate from "./components/admin/AdminAuthGate";
+
+// Page Imports
 import CreateOrder from "./components/CreateOrder";
 import OrderQueue from "./components/OrderQueue";
-import PreviousOrder from "./components/PreviousOrder";
-import Analytics from "./components/Analytics";
-import AdminPage from "./components/AdminPage";
+import PreviousOrder from "./components/PreviousOrder"; // adjust if named PreviousOrders
 
-function App() {
+export default function App() {
   return (
-    <div className="flex min-h-screen bg-orange-50 text-black overflow-hidden">
-
+    <div className="min-h-screen bg-stone-100 text-stone-900 flex">
+      {/* Side Pill Navigation */}
       <PillSideNav />
 
-      <main className="flex-1 p-8 pl-26 min-w-0">
+      {/* Main Content Area */}
+      <main className="flex-1 pl-24 sm:pl-28 pr-6 py-6 min-h-screen">
         <Routes>
-          <Route path="/" element={<CreateOrder />} />
+          <Route path="/" element={<Navigate to="/CreateOrder" replace />} />
           <Route path="/CreateOrder" element={<CreateOrder />} />
           <Route path="/OrderQueue" element={<OrderQueue />} />
           <Route path="/PreviousOrder" element={<PreviousOrder />} />
-          <Route path="/Analytics" element={<Analytics />} />
-          <Route path="/AdminPage" element={<AdminPage />} />
+          <Route path="/AdminPage" element={<AdminAuthGate />} />
         </Routes>
       </main>
-
     </div>
   );
 }
-
-export default App;

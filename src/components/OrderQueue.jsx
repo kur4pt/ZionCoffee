@@ -183,7 +183,7 @@ export default function OrderQueue() {
   return (
     <div className="min-h-screen p-6 bg-gray-100 flex flex-col">
       <header className="flex flex-col md:flex-row justify-between items-center pb-6 border-b mb-6 gap-4">
-        <h1 className="text-3xl font-bold text-stone-800">Barista KDS</h1>
+        <h1 className="text-3xl font-bold text-stone-800">Barista Order Queue</h1>
 
         <div className="flex bg-gray-200 p-1 rounded-xl">
           <button
