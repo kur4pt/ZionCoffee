@@ -14,6 +14,7 @@ import {
   ChevronRight,
   X,
   BarChart2,
+  Coffee,
 } from "lucide-react";
 
 export default function AdminAnalytics() {
@@ -24,6 +25,7 @@ export default function AdminAnalytics() {
   const [debugInfo, setDebugInfo] = useState(null);
 
   const [rawOrders, setRawOrders] = useState([]);
+  const [orderItemsMap, setOrderItemsMap] = useState({}); // Stores items grouped by order_id
   const [metrics, setMetrics] = useState({
     totalRevenue: 0,
     totalOrders: 0,
@@ -79,6 +81,7 @@ export default function AdminAnalytics() {
         setTopItems([]);
         setBottomItems([]);
         setRawOrders([]);
+        setOrderItemsMap({});
         setLoading(false);
         return;
       }
@@ -149,17 +152,28 @@ export default function AdminAnalytics() {
         }));
       setDailySummaries(summaries);
 
-      // Fetch order_items data
+      // Fetch order_items data and map by order_id
       const { data: orderItems, error: itemsError } = await supabase
         .from("order_items")
-        .select("name");
+        .select("*");
 
       if (!itemsError && orderItems && orderItems.length > 0) {
         const itemCountsMap = {};
+        const groupedByOrder = {};
+
         orderItems.forEach((oi) => {
           const itemName = oi.name || "Unknown Item";
-          itemCountsMap[itemName] = (itemCountsMap[itemName] || 0) + 1;
+          itemCountsMap[itemName] = (itemCountsMap[itemName] || 0) + (oi.quantity || 1);
+
+          if (oi.order_id) {
+            if (!groupedByOrder[oi.order_id]) {
+              groupedByOrder[oi.order_id] = [];
+            }
+            groupedByOrder[oi.order_id].push(oi);
+          }
         });
+
+        setOrderItemsMap(groupedByOrder);
 
         const sortedItems = Object.entries(itemCountsMap)
           .map(([name, count]) => ({ name, count }))
@@ -579,7 +593,7 @@ export default function AdminAnalytics() {
         </div>
       )}
 
-      {/* DETAILED DAILY ORDERS MODAL */}
+      {/* DETAILED DAILY ORDERS MODAL WITH ITEM BREAKDOWN */}
       {selectedDayDetails && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full max-h-[80vh] sm:max-h-[85vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -609,24 +623,73 @@ export default function AdminAnalytics() {
                   ? new Date(order.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                   : "N/A";
 
+                // Check for items either in the fetched orderItemsMap or embedded JSON field
+                const itemsList = orderItemsMap[order.id] || order.items || [];
+
                 return (
-                  <div key={order.id || idx} className="p-3 sm:p-4 border rounded-xl bg-stone-50/50 space-y-2">
+                  <div key={order.id || idx} className="p-3.5 sm:p-4 border rounded-xl bg-stone-50/50 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="font-bold text-stone-800 text-xs sm:text-sm">
                           {order.customer_name || "Guest Customer"}
                         </span>
-                        <div className="text-[11px] text-stone-400">Order #{order.id} • {orderTime}</div>
+                        <div className="text-[11px] text-stone-400">
+                          {orderTime}
+                        </div>
                       </div>
                       <span className="font-bold font-mono text-emerald-700 text-sm sm:text-base">
                         ${total.toFixed(2)}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                        order.status === "completed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                      }`}>
+                    {/* Itemized Breakdown List */}
+                    <div className="bg-white p-2.5 rounded-lg border border-stone-200/80 space-y-1.5">
+                      <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider flex items-center gap-1">
+                        <Coffee className="w-3 h-3 text-amber-800" />
+                        <span>Order Items ({itemsList.length})</span>
+                      </div>
+
+                      {itemsList.length === 0 ? (
+                        <p className="text-xs text-stone-400 italic">No item details recorded.</p>
+                      ) : (
+                        <ul className="divide-y divide-stone-100 text-xs">
+                          {itemsList.map((item, itemIdx) => (
+                            <li key={itemIdx} className="py-1.5 flex justify-between items-start">
+                              <div>
+                                <span className="font-semibold text-stone-800">
+                                  {item.quantity ? `${item.quantity}x ` : "1x "}
+                                  {item.name || item.title || "Unknown Drink"}
+                                </span>
+
+                                {/* Drink Customization details (Milk, Sweetness, Size) */}
+                                {(item.options || item.customizations) && (
+                                  <p className="text-[11px] text-stone-500 font-normal">
+                                    {typeof item.options === "string"
+                                      ? item.options
+                                      : Object.values(item.options || item.customizations).join(", ")}
+                                  </p>
+                                )}
+                              </div>
+
+                              {item.price && (
+                                <span className="font-mono text-stone-500 text-[11px]">
+                                  ${(Number(item.price) * (item.quantity || 1)).toFixed(2)}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <span
+                        className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                          order.status === "completed"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
                         {order.status || "pending"}
                       </span>
                     </div>

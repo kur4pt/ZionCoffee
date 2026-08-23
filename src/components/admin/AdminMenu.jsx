@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../../supabaseClient";
+import { Edit2, Check, X } from "lucide-react";
 
 export default function AdminMenu() {
   const [menuItems, setMenuItems] = useState([]);
@@ -16,6 +17,10 @@ export default function AdminMenu() {
   const [newItemCategory, setNewItemCategory] = useState("Coffee");
   const [newItemImage, setNewItemImage] = useState(null);
   const [newItemImagePreview, setNewItemImagePreview] = useState("");
+
+  // Name Editing State
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [editingNameValue, setEditingNameValue] = useState("");
 
   // Customizations Form State
   const [customizations, setCustomizations] = useState({
@@ -93,6 +98,39 @@ export default function AdminMenu() {
     } catch (err) {
       console.error("Failed to update image:", err.message);
       alert("Failed to save image.");
+    }
+  };
+
+  const handleStartEditingName = (item) => {
+    setEditingItemId(item.id);
+    setEditingNameValue(item.name);
+  };
+
+  const handleSaveName = async (itemId) => {
+    const trimmed = editingNameValue.trim();
+    if (!trimmed) {
+      setEditingItemId(null);
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("menu_items")
+        .update({ name: trimmed })
+        .eq("id", Number(itemId));
+
+      if (error) throw error;
+
+      setMenuItems((prev) =>
+        prev.map((item) =>
+          item.id === itemId ? { ...item, name: trimmed } : item
+        )
+      );
+    } catch (err) {
+      console.error("Failed to update item name:", err.message);
+      alert(`Failed to save name: ${err.message}`);
+    } finally {
+      setEditingItemId(null);
     }
   };
 
@@ -234,7 +272,7 @@ export default function AdminMenu() {
       <header className="border-b pb-3 sm:pb-4">
         <h1 className="text-2xl sm:text-3xl font-bold">Menu & Price Management</h1>
         <p className="text-xs sm:text-sm text-stone-500">
-          Manage categories, upload photos, set pricing, or delete items from your menu.
+          Manage categories, upload photos, edit item names, set pricing, or delete items from your menu.
         </p>
       </header>
 
@@ -454,12 +492,60 @@ export default function AdminMenu() {
                 </div>
               </div>
 
-              {/* Card Details & Price Quick Edit */}
+              {/* Card Details & Price / Name Quick Edit */}
               <div className="p-4 sm:p-5 space-y-3 sm:space-y-4">
                 <div>
-                  <h3 className="font-bold text-stone-800 text-base sm:text-lg leading-snug">
-                    {item.name}
-                  </h3>
+                  {/* Editable Name Field */}
+                  {editingItemId === item.id ? (
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <input
+                        type="text"
+                        value={editingNameValue}
+                        onChange={(e) => setEditingNameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveName(item.id);
+                          if (e.key === "Escape") setEditingItemId(null);
+                        }}
+                        autoFocus
+                        className="w-full px-2 py-1 border rounded-lg focus:ring-2 focus:ring-amber-900 outline-none font-bold text-stone-800 text-sm sm:text-base"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveName(item.id)}
+                        className="p-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors"
+                        title="Save Name"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingItemId(null)}
+                        className="p-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg transition-colors"
+                        title="Cancel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between group/title">
+                      <h3
+                        onClick={() => handleStartEditingName(item)}
+                        className="font-bold text-stone-800 text-base sm:text-lg leading-snug cursor-pointer hover:text-amber-900 transition-colors flex items-center gap-1.5"
+                        title="Click to edit name"
+                      >
+                        {item.name}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditingName(item)}
+                        className="text-stone-400 opacity-0 group-hover/title:opacity-100 hover:text-amber-900 transition-all p-1"
+                        title="Edit Name"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     <span className="inline-block bg-stone-100 text-stone-600 text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-medium">
                       {item.category}
