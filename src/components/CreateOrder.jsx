@@ -1,6 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../supabaseClient";
-import { ShoppingBag, ChevronUp, ChevronDown, Trash2, Edit3, X } from "lucide-react";
+import {
+  ShoppingBag,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  Edit3,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 
 export default function CreateOrder() {
   const [menuItems, setMenuItems] = useState([]);
@@ -12,6 +23,63 @@ export default function CreateOrder() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
+  // Sound State & Web Audio Context Ref
+  const [isMuted, setIsMuted] = useState(false);
+  const audioCtxRef = useRef(null);
+
+  // Toast Notification State
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+
+  useEffect(() => {
+    fetchMenuItems();
+  }, []);
+
+  // In web chime
+  const playChime = (type = "success") => {
+    if (isMuted) return;
+
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
+
+      const now = ctx.currentTime;
+
+      // Frequency selection based on toast type
+      const freq1 = type === "success" ? 523.25 : 392.00;
+      const freq2 = type === "success" ? 659.25 : 311.13;
+
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = "sine";
+      osc2.type = "sine";
+
+      osc1.frequency.setValueAtTime(freq1, now);
+      osc2.frequency.setValueAtTime(freq2, now + 0.1);
+
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now);
+      osc1.stop(now + 0.1);
+      osc2.start(now + 0.1);
+      osc2.stop(now + 0.5);
+    } catch (err) {
+      console.warn("Audio Context playback failed:", err);
+    }
+  };
+
   // Modal State
   const [selectedItem, setSelectedItem] = useState(null);
   const [editingItemId, setEditingItemId] = useState(null);
@@ -20,9 +88,13 @@ export default function CreateOrder() {
   const [foam, setFoam] = useState("None");
   const [sparklingType, setSparklingType] = useState("Regular");
 
-  useEffect(() => {
-    fetchMenuItems();
-  }, []);
+  const showToast = (message, type = "success") => {
+    setToast({ show: true, message, type });
+    playChime(type);
+    setTimeout(() => {
+      setToast({ show: false, message: "", type: "success" });
+    }, 3500);
+  };
 
   const fetchMenuItems = async () => {
     try {
@@ -37,6 +109,7 @@ export default function CreateOrder() {
       setMenuItems(data || []);
     } catch (err) {
       console.error("Error loading menu from Supabase:", err.message);
+      showToast("Failed to load menu items", "error");
     } finally {
       setLoadingMenu(false);
     }
@@ -78,7 +151,6 @@ export default function CreateOrder() {
   };
 
   const handleSaveCartItem = () => {
-    // Check dynamic customization options from Supabase array
     const allowed = selectedItem.allowed_customizations || [];
     const hasTemp = allowed.includes("temp");
     const hasMilk = allowed.includes("milk");
@@ -109,14 +181,20 @@ export default function CreateOrder() {
           item.id === editingItemId ? { ...item, ...payload } : item
         )
       );
+      showToast(`Updated ${selectedItem.name}`);
     } else {
       setCart([...cart, { id: Date.now(), ...payload }]);
+      showToast(`Added ${selectedItem.name} to order`);
     }
     handleCloseModal();
   };
 
   const handleRemoveFromCart = (itemId) => {
+    const itemToRemove = cart.find((i) => i.id === itemId);
     setCart(cart.filter((item) => item.id !== itemId));
+    if (itemToRemove) {
+      showToast(`Removed ${itemToRemove.name}`, "error");
+    }
   };
 
   const subTotal = cart.reduce((sum, item) => sum + item.price, 0);
@@ -163,26 +241,65 @@ export default function CreateOrder() {
       setCart([]);
       setCustomerName("");
       setIsMobileCartOpen(false);
-      alert("Order successfully placed!");
+      showToast("Order successfully placed!", "success");
     } catch (error) {
       console.error("Error submitting order to Supabase:", error.message);
-      alert("Failed to place order. Please try again.");
+      showToast("Failed to place order. Please try again.", "error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Helper check for modal customization array
   const allowedOpts = selectedItem?.allowed_customizations || [];
 
   return (
-    <div className="min-h-screen pb-24 lg:pb-6 p-4 lg:p-6 flex flex-col bg-stone-100">
+    <div className="min-h-screen pb-24 lg:pb-6 p-4 lg:p-6 flex flex-col bg-stone-100 relative">
 
-      {/* TOP MOBILE-FRIENDLY NAVBAR */}
-      <header className="sticky top-0 z-30 bg-stone-100/90 backdrop-blur-md flex items-center justify-between pb-4 mb-4 border-b border-stone-200">
-        <div className="text-xs lg:text-sm font-semibold tracking-wider text-stone-500 uppercase hover:text-black transition-colors cursor-pointer">
-          Home
+      {/* ENHANCED LARGER TOAST NOTIFICATION */}
+      {toast.show && (
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-4 px-6 py-4.5 rounded-2xl shadow-2xl transition-all duration-300 border-2 bg-stone-900 text-white border-stone-800 animate-in slide-in-from-top-4 max-w-md">
+          {toast.type === "success" ? (
+            <CheckCircle2 className="w-7 h-7 text-emerald-400 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="w-7 h-7 text-rose-400 flex-shrink-0" />
+          )}
+          <span className="text-sm sm:text-base font-bold tracking-wide flex-1">
+            {toast.message}
+          </span>
+          <button
+            onClick={() => setToast({ ...toast, show: false })}
+            className="text-stone-400 hover:text-white p-1 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
+      )}
+
+      {/* TOP NAVBAR WITH MUTE SOUND TOGGLE */}
+      <header className="sticky top-0 z-30 bg-stone-100/90 backdrop-blur-md flex items-center justify-between pb-4 mb-4 border-b border-stone-200">
+        <div className="flex items-center gap-4">
+          <div className="text-xs lg:text-sm font-semibold tracking-wider text-stone-500 uppercase hover:text-black transition-colors cursor-pointer">
+            Home
+          </div>
+          <button
+            onClick={() => setIsMuted(!isMuted)}
+            className="p-1.5 rounded-lg border border-stone-300 bg-white hover:bg-stone-200 text-stone-700 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+            title={isMuted ? "Unmute Notifications" : "Mute Notifications"}
+          >
+            {isMuted ? (
+              <>
+                <VolumeX className="w-4 h-4 text-rose-600" />
+                <span className="hidden sm:inline">Muted</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-4 h-4 text-emerald-600" />
+                <span className="hidden sm:inline">Sound On</span>
+              </>
+            )}
+          </button>
+        </div>
+
         <h1 className="font-meddon text-2xl lg:text-4xl font-bold text-stone-800 tracking-tight">
           Zion Coffee
         </h1>
@@ -452,16 +569,13 @@ export default function CreateOrder() {
               </button>
             </div>
 
-            {/* Default text if item requires no customizations */}
             {allowedOpts.length === 0 && (
               <p className="text-sm text-stone-500 italic py-2">
                 This item is served with its signature standard recipe and does not require customization options.
               </p>
             )}
 
-            {/* Dynamic Customization Options */}
             <div className="space-y-4">
-              {/* Temperature */}
               {allowedOpts.includes("temp") && (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-stone-600 block mb-2">
@@ -488,7 +602,6 @@ export default function CreateOrder() {
                 </div>
               )}
 
-              {/* Milk */}
               {allowedOpts.includes("milk") && (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-2">
@@ -512,7 +625,6 @@ export default function CreateOrder() {
                 </div>
               )}
 
-              {/* Cold Foam (Only visible when Temp is Iced) */}
               {allowedOpts.includes("foam") && temp === "Iced" && (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-2">
@@ -543,7 +655,6 @@ export default function CreateOrder() {
                 </div>
               )}
 
-              {/* Sparkling Style */}
               {allowedOpts.includes("sparklingType") && (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-stone-500 block mb-2">
