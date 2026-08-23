@@ -1,26 +1,92 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../supabaseClient";
-import { CheckCircle2, AlertCircle, X } from "lucide-react";
+import { CheckCircle2, AlertCircle, X, Volume2, VolumeX } from "lucide-react";
 
 export default function OrderQueue() {
   const [orders, setOrders] = useState([]);
   const [activeTab, setActiveTab] = useState("pending"); // "pending" | "preparing" | "completed"
   const [loading, setLoading] = useState(true);
 
-  // PIN & Modal State
+  const [isMuted, setIsMuted] = useState(true);
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
+  const audioCtxRef = useRef(null);
+
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
   const MASTER_PIN = "1234";
 
-  // In-App Toast State
-  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+  const [toast, setToast] = useState({ show: false, message: "", type: "success", key: 0 });
+  const toastTimerRef = useRef(null);
+  const TOAST_DURATION = 4000;
+
+  const getAudioContext = async () => {
+    if (!audioCtxRef.current) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new AudioCtx();
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx.state === "suspended") {
+      await ctx.resume();
+    }
+    return ctx;
+  };
+
+  const playOrderChime = async () => {
+    if (isMuted) return;
+
+    try {
+      const ctx = await getAudioContext();
+      const now = ctx.currentTime;
+      const notes = [392.00, 523.25, 659.25];
+      
+      notes.forEach((freq, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, now + index * 0.12);
+
+        gain.gain.setValueAtTime(0.85, now + index * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.12 + 0.5);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + index * 0.12);
+        osc.stop(now + index * 0.12 + 0.5);
+      });
+    } catch (err) {
+      console.warn("Audio Context playback failed:", err);
+    }
+  };
+
+  const toggleSound = async () => {
+    if (isMuted) {
+      try {
+        const ctx = await getAudioContext();
+        if (ctx.state === "running") {
+          setIsAudioUnlocked(true);
+        }
+      } catch (err) {
+        console.warn("Failed to enable audio context:", err);
+      }
+      setIsMuted(false);
+    } else {
+      setIsMuted(true);
+    }
+  };
 
   const showToast = (message, type = "success") => {
-    setToast({ show: true, message, type });
-    setTimeout(() => {
-      setToast({ show: false, message: "", type: "success" });
-    }, 4000);
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+
+    setToast({ show: true, message, type, key: Date.now() });
+
+    toastTimerRef.current = setTimeout(() => {
+      setToast((prev) => ({ ...prev, show: false }));
+    }, TOAST_DURATION);
   };
 
   const formatSequentialOrderId = (order, allOrders) => {
@@ -50,6 +116,8 @@ export default function OrderQueue() {
         { event: "*", schema: "public", table: "orders" },
         async (payload) => {
           if (payload.eventType === "INSERT") {
+            playOrderChime();
+
             await new Promise((resolve) => setTimeout(resolve, 300));
 
             const { data: items } = await supabase
@@ -66,6 +134,8 @@ export default function OrderQueue() {
               ...prev.filter((o) => o.id !== payload.new.id),
               newOrderWithItems,
             ]);
+
+            showToast(`New order received from ${payload.new.customer_name || "Customer"}!`, "success");
           } else if (payload.eventType === "UPDATE") {
             setOrders((prev) =>
               prev.map((order) =>
@@ -82,7 +152,7 @@ export default function OrderQueue() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [isMuted]);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -183,7 +253,6 @@ export default function OrderQueue() {
       setPin("");
       setPinError("");
       
-      // Trigger Aesthetic In-App Notification
       showToast("Daily snapshot created & completed orders archived!", "success");
     } catch (err) {
       console.error("Error closing day:", err.message);
@@ -195,8 +264,76 @@ export default function OrderQueue() {
 
   return (
     <div className="min-h-screen p-6 bg-gray-100 flex flex-col relative">
+      {/* SCREEN-FITTING TOP-RIGHT TOAST WITH PROGRESS BAR */}
+      {toast.show && (
+        <div
+          key={toast.key}
+          className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 overflow-hidden rounded-2xl shadow-2xl border transition-all duration-300 max-w-[calc(100vw-2rem)] sm:max-w-md w-full bg-stone-900 text-stone-100 border-stone-800"
+        >
+          <div className="flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-4">
+            {toast.type === "error" ? (
+              <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-rose-400 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 shrink-0" />
+            )}
+            <span className="text-xs sm:text-sm font-semibold pr-2 truncate">
+              {toast.message}
+            </span>
+            <button
+              onClick={() => setToast((prev) => ({ ...prev, show: false }))}
+              className="text-stone-400 hover:text-white p-1 rounded-lg transition-colors ml-auto shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="w-full bg-stone-800 h-1">
+            <div
+              className={`h-full transition-all ease-linear ${
+                toast.type === "error" ? "bg-rose-500" : "bg-emerald-400"
+              }`}
+              style={{
+                animation: `shrinkProgress ${TOAST_DURATION}ms linear forwards`,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes shrinkProgress {
+          from { width: 100%; }
+          to { width: 0%; }
+        }
+      `}</style>
+
       <header className="flex flex-col md:flex-row justify-between items-center pb-6 border-b mb-6 gap-4">
-        <h1 className="text-3xl font-bold text-stone-800">Barista Order Queue</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-3xl font-bold text-stone-800">Barista Order Queue</h1>
+          <button
+            onClick={toggleSound}
+            className={`p-2 rounded-xl border transition-colors flex items-center gap-2 text-xs font-bold shadow-sm ${
+              isMuted 
+                ? "bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100" 
+                : "bg-white border-stone-300 text-stone-700 hover:bg-stone-50"
+            }`}
+            title={isMuted ? "Unmute Order Sounds" : "Mute Order Sounds"}
+          >
+            {isMuted ? (
+              <>
+                <VolumeX className="w-4 h-4 text-rose-600" />
+                <span className="hidden sm:inline">Unmute Sound</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-4 h-4 text-emerald-600" />
+                <span className="hidden sm:inline">
+                  {isAudioUnlocked ? "Sound On" : "Sound Enabled"}
+                </span>
+              </>
+            )}
+          </button>
+        </div>
 
         <div className="flex bg-gray-200 p-1 rounded-xl">
           <button
@@ -384,30 +521,6 @@ export default function OrderQueue() {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* FLOATING TOAST NOTIFICATION */}
-      {toast.show && (
-        <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border transition-all duration-300 ${
-            toast.type === "error"
-              ? "bg-rose-950 text-rose-100 border-rose-800"
-              : "bg-stone-900 text-stone-100 border-stone-800"
-          }`}
-        >
-          {toast.type === "error" ? (
-            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-          ) : (
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          )}
-          <span className="text-sm font-medium pr-2">{toast.message}</span>
-          <button
-            onClick={() => setToast({ show: false, message: "", type: "success" })}
-            className="text-stone-400 hover:text-white p-1 rounded-lg transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
       )}
     </div>
