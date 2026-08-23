@@ -1,70 +1,40 @@
 import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../supabaseClient";
 import { CheckCircle2, AlertCircle, X, Volume2, VolumeX } from "lucide-react";
+import { getAudioContext, playOrderChime } from "../utils/chime";
 
 export default function OrderQueue() {
   const [orders, setOrders] = useState([]);
-  const [activeTab, setActiveTab] = useState("pending"); // "pending" | "preparing" | "completed"
+  const [activeTab, setActiveTab] = useState("pending");
   const [loading, setLoading] = useState(true);
 
+  // Audio State
   const [isMuted, setIsMuted] = useState(true);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
-  const audioCtxRef = useRef(null);
 
+  const isMutedRef = useRef(isMuted);
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  // PIN & Modal State
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
   const MASTER_PIN = "1234";
 
+  // In-App Toast State
   const [toast, setToast] = useState({ show: false, message: "", type: "success", key: 0 });
   const toastTimerRef = useRef(null);
   const TOAST_DURATION = 4000;
-
-  const getAudioContext = async () => {
-    if (!audioCtxRef.current) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      audioCtxRef.current = new AudioCtx();
-    }
-    const ctx = audioCtxRef.current;
-    if (ctx.state === "suspended") {
-      await ctx.resume();
-    }
-    return ctx;
-  };
-
-  const playOrderChime = async () => {
-    if (isMuted) return;
-
-    try {
-      const ctx = await getAudioContext();
-      const now = ctx.currentTime;
-      const notes = [392.00, 523.25, 659.25];
-      
-      notes.forEach((freq, index) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(freq, now + index * 0.12);
-
-        gain.gain.setValueAtTime(0.85, now + index * 0.12);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.12 + 0.5);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc.start(now + index * 0.12);
-        osc.stop(now + index * 0.12 + 0.5);
-      });
-    } catch (err) {
-      console.warn("Audio Context playback failed:", err);
-    }
-  };
 
   const toggleSound = async () => {
     if (isMuted) {
       try {
         const ctx = await getAudioContext();
+        if (ctx.state === "suspended") {
+          await ctx.resume();
+        }
         if (ctx.state === "running") {
           setIsAudioUnlocked(true);
         }
@@ -107,6 +77,27 @@ export default function OrderQueue() {
   };
 
   useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible" && !isMutedRef.current) {
+        try {
+          const ctx = await getAudioContext();
+          if (ctx.state === "suspended") {
+            await ctx.resume();
+          }
+        } catch (err) {
+          console.warn("Error resuming AudioContext on tab focus:", err);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  // Supabase Realtime Setup
+  useEffect(() => {
     fetchOrders();
 
     const channel = supabase
@@ -116,9 +107,10 @@ export default function OrderQueue() {
         { event: "*", schema: "public", table: "orders" },
         async (payload) => {
           if (payload.eventType === "INSERT") {
-            playOrderChime();
 
-            await new Promise((resolve) => setTimeout(resolve, 300));
+            playOrderChime(isMutedRef.current);
+
+            await new Promise((resolve) => setTimeout(resolve, 200));
 
             const { data: items } = await supabase
               .from("order_items")
@@ -135,7 +127,7 @@ export default function OrderQueue() {
               newOrderWithItems,
             ]);
 
-            showToast(`New order received from ${payload.new.customer_name || "Customer"}!`, "success");
+            showToast(`New order!`, "success");
           } else if (payload.eventType === "UPDATE") {
             setOrders((prev) =>
               prev.map((order) =>
@@ -152,7 +144,7 @@ export default function OrderQueue() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isMuted]);
+  }, []); // Empty dependency, ensures subscription remains stable
 
   const fetchOrders = async () => {
     setLoading(true);

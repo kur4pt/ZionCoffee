@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import {
   ShoppingBag,
@@ -12,6 +12,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
+import { playNotificationChime } from "../utils/chime";
 
 export default function CreateOrder() {
   const [menuItems, setMenuItems] = useState([]);
@@ -23,9 +24,8 @@ export default function CreateOrder() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // Sound State & Web Audio Context Ref
+  // Sound State
   const [isMuted, setIsMuted] = useState(false);
-  const audioCtxRef = useRef(null);
 
   // Toast Notification State
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
@@ -33,52 +33,6 @@ export default function CreateOrder() {
   useEffect(() => {
     fetchMenuItems();
   }, []);
-
-  // In web chime
-  const playChime = (type = "success") => {
-    if (isMuted) return;
-
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new AudioCtx();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") {
-        ctx.resume();
-      }
-
-      const now = ctx.currentTime;
-
-      // Frequency selection based on toast type
-      const freq1 = type === "success" ? 523.25 : 392.00;
-      const freq2 = type === "success" ? 659.25 : 311.13;
-
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc1.type = "sine";
-      osc2.type = "sine";
-
-      osc1.frequency.setValueAtTime(freq1, now);
-      osc2.frequency.setValueAtTime(freq2, now + 0.1);
-
-      gain.gain.setValueAtTime(0.15, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc1.start(now);
-      osc1.stop(now + 0.1);
-      osc2.start(now + 0.1);
-      osc2.stop(now + 0.5);
-    } catch (err) {
-      console.warn("Audio Context playback failed:", err);
-    }
-  };
 
   // Modal State
   const [selectedItem, setSelectedItem] = useState(null);
@@ -90,7 +44,7 @@ export default function CreateOrder() {
 
   const showToast = (message, type = "success") => {
     setToast({ show: true, message, type });
-    playChime(type);
+    playNotificationChime(type, isMuted);
     setTimeout(() => {
       setToast({ show: false, message: "", type: "success" });
     }, 3500);
