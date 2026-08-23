@@ -26,7 +26,7 @@ export default function OrderQueue() {
   // In-App Toast State
   const [toast, setToast] = useState({ show: false, message: "", type: "success", key: 0 });
   const toastTimerRef = useRef(null);
-  const TOAST_DURATION = 4000;
+  const TOAST_DURATION = 3000;
 
   const toggleSound = async () => {
     if (isMuted) {
