@@ -8,11 +8,17 @@ export default function AdminAuthGate({ setActiveMainTab }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  // Pulls password from .env file
+  // Pulls password from .env file with a fallback safety check
   const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
 
   const handleLogin = (e) => {
     e.preventDefault();
+
+    if (!ADMIN_PASSWORD) {
+      setError("Admin password is not configured in .env file (VITE_ADMIN_PASSWORD).");
+      return;
+    }
+
     if (password === ADMIN_PASSWORD) {
       setIsAuthenticated(true);
       sessionStorage.setItem("admin_authenticated", "true");
@@ -31,7 +37,13 @@ export default function AdminAuthGate({ setActiveMainTab }) {
   };
 
   if (isAuthenticated) {
-    return <AdminLayout setActiveMainTab={setActiveMainTab} onLogout={handleLogout} />;
+    return (
+      <AdminLayout
+        setActiveMainTab={setActiveMainTab}
+        onLock={handleLogout}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (
