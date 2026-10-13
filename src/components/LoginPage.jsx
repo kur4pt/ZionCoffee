@@ -5,13 +5,23 @@ import { Lock } from "lucide-react";
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = login(password);
-    if (!success) {
-      setError("Incorrect password. Please try again.");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const success = await login(password);
+      if (!success) {
+        setError("Incorrect password. Please try again.");
+      }
+    } catch (err) {
+      setError("An error occurred during login. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -45,7 +55,8 @@ export default function LoginPage() {
                   setPassword(e.target.value);
                   setError("");
                 }}
-                className="w-full pl-10 pr-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-900 transition-all"
+                disabled={isLoading}
+                className="w-full pl-10 pr-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-900 transition-all disabled:bg-stone-50"
                 autoFocus
               />
               <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
@@ -58,9 +69,10 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full bg-stone-900 hover:bg-amber-900 text-white font-bold py-3 rounded-xl transition-colors shadow-md text-sm"
+            disabled={isLoading || !password.trim()}
+            className="w-full bg-stone-900 hover:bg-amber-900 disabled:bg-stone-300 text-white font-bold py-3 rounded-xl transition-colors shadow-md text-sm flex items-center justify-center gap-2"
           >
-            Unlock Application
+            {isLoading ? "Verifying..." : "Unlock Application"}
           </button>
         </form>
       </div>
