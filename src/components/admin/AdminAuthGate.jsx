@@ -5,7 +5,7 @@ export default function AdminAuthGate({ setActiveMainTab }) {
   const [isAuthenticated, setIsAuthenticated] = useState(
     () => sessionStorage.getItem("admin_authenticated") === "true"
   );
-  const [password, setPassword] = useState("");
+  const [Adpassword, setPassword] = useState("");
   const [error, setError] = useState("");
 
   // Pulls password from .env file with a fallback safety check
@@ -19,7 +19,7 @@ export default function AdminAuthGate({ setActiveMainTab }) {
       return;
     }
 
-    if (password === ADMIN_PASSWORD) {
+    if (Adpassword === ADMIN_PASSWORD) {
       setIsAuthenticated(true);
       sessionStorage.setItem("admin_authenticated", "true");
       setError("");
