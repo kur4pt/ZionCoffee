@@ -1,36 +1,37 @@
 import React, { useState } from "react";
 import AdminLayout from "./AdminLayout";
+import { useAuth } from "../../context/AuthContext";
 
 export default function AdminAuthGate({ setActiveMainTab }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => sessionStorage.getItem("admin_authenticated") === "true"
-  );
-  const [Adpassword, setPassword] = useState("");
+  const { authRole, login, logout } = useAuth();
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Pulls password from .env file with a fallback safety check
-  const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
+  // Check if authenticated user is specifically a manager
+  const isAuthenticated = authRole === "manager";
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
+    setError("");
+    setIsLoading(true);
 
-    if (!ADMIN_PASSWORD) {
-      setError("Admin password is not configured in .env file (VITE_ADMIN_PASSWORD).");
-      return;
-    }
-
-    if (Adpassword === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem("admin_authenticated", "true");
-      setError("");
-    } else {
-      setError("Incorrect admin password. Please try again.");
+    try {
+      const role = await login(password);
+      if (role === "manager") {
+        setError("");
+      } else {
+        setError("Incorrect manager password. Please try again.");
+      }
+    } catch (err) {
+      setError("An error occurred during authentication.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    sessionStorage.removeItem("admin_authenticated");
+    logout();
     if (setActiveMainTab) {
       setActiveMainTab("queue");
     }
@@ -55,21 +56,22 @@ export default function AdminAuthGate({ setActiveMainTab }) {
           </div>
           <h2 className="text-2xl font-bold text-stone-800">Admin Authentication</h2>
           <p className="text-xs text-stone-500">
-            Enter the master portal password to access administrative controls.
+            Enter the master manager password to access administrative controls.
           </p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-stone-600 uppercase mb-1">
-              Admin Password
+              Manager Password
             </label>
             <input
               type="password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border rounded-xl font-mono text-center text-lg focus:ring-2 focus:ring-amber-900 outline-none"
+              disabled={isLoading}
+              className="w-full px-4 py-3 border rounded-xl font-mono text-center text-lg focus:ring-2 focus:ring-amber-900 outline-none disabled:bg-stone-50"
               autoFocus
             />
           </div>
@@ -80,9 +82,10 @@ export default function AdminAuthGate({ setActiveMainTab }) {
 
           <button
             type="submit"
-            className="w-full bg-amber-900 hover:bg-amber-800 text-white font-bold py-3 rounded-xl shadow-md transition-colors"
+            disabled={isLoading || !password.trim()}
+            className="w-full bg-amber-900 hover:bg-amber-800 disabled:bg-stone-300 text-white font-bold py-3 rounded-xl shadow-md transition-colors flex items-center justify-center gap-2"
           >
-            Unlock Portal
+            {isLoading ? "Verifying..." : "Unlock Portal"}
           </button>
         </form>
       </div>
